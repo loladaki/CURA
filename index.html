@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🕯️ Velas — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -115,7 +116,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     <div class="nav-item" data-page="analises"><span class="nav-icon">📈</span> Análises</div>
     <div class="nav-item" data-page="definicoes"><span class="nav-icon">⚙️</span> Definições</div>
   </div>
-  <div class="sb-footer">Dados guardados localmente</div>
+  <div class="sb-footer" id="sb-status">⏳ A ligar...</div>
 </nav>
 
 <main class="main">
@@ -501,19 +502,88 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 
 <script>
-// ── STORAGE ───────────────────────────────────────────────
-const MEM = {};
+// ── SUPABASE + STORAGE ────────────────────────────────────
+const SB_URL = 'https://qsxefidbfqzbyefsfjwg.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeGVmaWRiZnF6YnllZnNmandnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDQ3MDQsImV4cCI6MjA5NDUyMDcwNH0.7WNjp062Sx3S87YH3ZZFyq-Rr5NdWSbymlSBjDQogiA';
+const TBL = { inventory:'inventario', orders:'vendas', stock:'stock', expenses:'gastos', batches:'lotes', receitas:'receitas' };
+
+function toRow(k, obj) {
+  const r = {...obj}; delete r.created_at;
+  if (k === 'expenses') { r.descricao = r.desc; delete r.desc; }
+  if (k === 'batches') {
+    const m = {waxKg:'wax_kg',fragG:'frag_g',waxCost:'wax_cost',fragCost:'frag_cost',contCost:'cont_cost',wickCost:'wick_cost',lblCost:'lbl_cost',totalCost:'total_cost'};
+    Object.entries(m).forEach(([js,sql]) => { r[sql]=r[js]; delete r[js]; });
+  }
+  return r;
+}
+function fromRow(k, r) {
+  const obj = {...r};
+  if (k === 'expenses') { obj.desc = obj.descricao; delete obj.descricao; }
+  if (k === 'batches') {
+    const m = {wax_kg:'waxKg',frag_g:'fragG',wax_cost:'waxCost',frag_cost:'fragCost',cont_cost:'contCost',wick_cost:'wickCost',lbl_cost:'lblCost',total_cost:'totalCost'};
+    Object.entries(m).forEach(([sql,js]) => { obj[js]=obj[sql]; delete obj[sql]; });
+  }
+  return obj;
+}
+
+let sbClient = null;
+try { sbClient = supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn('Supabase init failed', e); }
+
+const CACHE = {};
 const DB = {
-  get(k) {
-    try { return JSON.parse(localStorage.getItem('velas_' + k) || '[]'); }
-    catch { return MEM[k] || []; }
-  },
+  get(k) { return CACHE[k] || []; },
   set(k, v) {
-    MEM[k] = v;
-    try { localStorage.setItem('velas_' + k, JSON.stringify(v)); } catch {}
+    const old = CACHE[k] || [];
+    CACHE[k] = v;
+    if (!sbClient || !TBL[k]) return;
+    const tbl = TBL[k];
+    if (v.length === 0) {
+      sbClient.from(tbl).delete().neq('id','').then(({error}) => { if(error) console.warn('SB clear:', error.message); });
+    } else if (v.length > old.length) {
+      const added = v.find(x => !old.find(y => y.id === x.id));
+      if (added) sbClient.from(tbl).insert(toRow(k, added)).then(({error}) => { if(error) console.warn('SB insert:', error.message); });
+    } else if (v.length === old.length) {
+      const changed = v.find(x => JSON.stringify(x) !== JSON.stringify(old.find(y => y.id === x.id)));
+      if (changed) sbClient.from(tbl).update(toRow(k, changed)).eq('id', changed.id).then(({error}) => { if(error) console.warn('SB update:', error.message); });
+    } else {
+      const deleted = old.find(x => !v.find(y => y.id === x.id));
+      if (deleted) sbClient.from(tbl).delete().eq('id', deleted.id).then(({error}) => { if(error) console.warn('SB delete:', error.message); });
+    }
+  },
+  importAll(k, v) {
+    CACHE[k] = v;
+    const tbl = TBL[k];
+    if (!sbClient || !tbl || !v.length) return;
+    sbClient.from(tbl).upsert(v.map(obj => toRow(k, obj))).then(({error}) => { if(error) console.warn('SB import:', error.message); });
   },
   id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 };
+
+async function loadAll() {
+  const statusEl = $('sb-status');
+  if (!sbClient) { if(statusEl){statusEl.textContent='⚠️ Sem Supabase';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';} renderDashboard(); return; }
+  try {
+    const [inv,ord,stk,exp,bat,rec] = await Promise.all([
+      sbClient.from('inventario').select('*'),
+      sbClient.from('vendas').select('*'),
+      sbClient.from('stock').select('*'),
+      sbClient.from('gastos').select('*'),
+      sbClient.from('lotes').select('*'),
+      sbClient.from('receitas').select('*'),
+    ]);
+    CACHE.inventory = (inv.data||[]).map(r => fromRow('inventory', r));
+    CACHE.orders    = (ord.data||[]).map(r => fromRow('orders', r));
+    CACHE.stock     = stk.data||[];
+    CACHE.expenses  = (exp.data||[]).map(r => fromRow('expenses', r));
+    CACHE.batches   = (bat.data||[]).map(r => fromRow('batches', r));
+    CACHE.receitas  = rec.data||[];
+    if(statusEl){statusEl.textContent='✅ Supabase ligado';statusEl.style.opacity='1';statusEl.style.color='var(--ok)';}
+  } catch(e) {
+    console.warn('Supabase load failed:', e);
+    if(statusEl){statusEl.textContent='⚠️ Modo offline';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
+  }
+  renderDashboard();
+}
 
 // ── UTILS ─────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -1142,7 +1212,7 @@ $('import-file').addEventListener('change', function() {
     try {
       const d=JSON.parse(e.target.result);
       if(!confirm('Substituir dados actuais?')) return;
-      ['inventory','orders','stock','expenses','batches','receitas'].forEach(k=>{if(d[k]) DB.set(k,d[k]);});
+      ['inventory','orders','stock','expenses','batches','receitas'].forEach(k=>{if(d[k]) DB.importAll(k,d[k]);});
       alert('Dados importados!'); renderPage(currentPage);
     } catch { alert('Ficheiro inválido.'); }
   };
@@ -1165,7 +1235,7 @@ $('btn-clear-all').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────
 buildStars(0);
 calcUpdate();
-renderDashboard();
+loadAll();
 </script>
 </body>
 </html>
