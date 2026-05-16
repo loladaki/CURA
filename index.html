@@ -1284,11 +1284,26 @@ document.addEventListener('click', e => {
     $('rec-color').value=r.color||''; $('rec-notes').value=r.notes||''; buildStars(r.rating||0); recRating=r.rating||0; $('rec-rating').value=recRating;
     openModal('rec-modal');
   }
-  // Delete handler
+  // Delete handler — 2 cliques para confirmar (evita confirm() bloqueado)
   if (e.target.dataset.del && e.target.dataset.id) {
-    if (!confirm('Eliminar este registo?')) return;
-    const key=e.target.dataset.del, id=e.target.dataset.id;
-    DB.set(key, DB.get(key).filter(x=>x.id!==id));
+    const btn = e.target;
+    if (btn.dataset.confirming !== '1') {
+      btn.dataset.confirming = '1';
+      btn.textContent = '⚠️ Tens a certeza?';
+      btn.style.cssText = 'background:var(--err);color:#fff;padding:4px 8px;font-size:.73rem';
+      setTimeout(() => {
+        if (btn.dataset.confirming === '1') {
+          btn.dataset.confirming = '';
+          btn.textContent = '🗑️';
+          btn.style.cssText = '';
+        }
+      }, 3000);
+      return;
+    }
+    btn.dataset.confirming = '';
+    const key = btn.dataset.del, id = btn.dataset.id;
+    const updated = DB.get(key).filter(x => x.id !== id);
+    DB.set(key, updated);
     renderPage(currentPage);
   }
 });
