@@ -176,7 +176,9 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       <div class="form-grid" style="grid-template-columns:1fr 1fr">
         <div class="fg"><label>Nome do Lote</label><input type="text" id="c-name" placeholder="ex: Lavanda — Maio"></div>
         <div class="fg"><label>Nº de Velas</label><input type="number" id="c-qty" value="100" min="1"></div>
-        <div class="fg"><label>Peso por Vela (g)</label><input type="number" id="c-weight" value="200" min="1"></div>
+        <div class="fg"><label>Volume do Recipiente (ml)</label><input type="number" id="c-vol" placeholder="ex: 250" min="1" step="1"></div>
+        <div class="fg"><label>Densidade da Cera (g/ml)</label><input type="number" id="c-density" value="0.80" min="0.1" max="2" step="0.01"></div>
+        <div class="fg"><label>Peso por Vela (g) <span style="font-weight:400;font-size:.65rem;color:var(--p)">← calculado</span></label><input type="number" id="c-weight" value="200" min="1"></div>
         <div class="fg"><label>% de Essência</label><input type="number" id="c-frag-pct" value="8" min="0" max="15" step="0.5"></div>
       </div>
       <hr class="hr">
@@ -972,8 +974,17 @@ $('btn-save-exp').addEventListener('click', () => {
 });
 
 // ── CALCULATOR ────────────────────────────────────────────
-const calcInputIds = ['c-qty','c-weight','c-frag-pct','c-wax-price','c-frag-price','c-container','c-wick','c-label','c-other','c-margin'];
+const calcInputIds = ['c-qty','c-vol','c-density','c-weight','c-frag-pct','c-wax-price','c-frag-price','c-container','c-wick','c-label','c-other','c-margin'];
 calcInputIds.forEach(id => { const el=$(id); if(el) el.addEventListener('input', calcUpdate); });
+
+// When volume or density changes, auto-fill weight
+['c-vol','c-density'].forEach(id => {
+  const el=$(id); if(!el) return;
+  el.addEventListener('input', () => {
+    const vol=num($('c-vol')?.value), dens=num($('c-density')?.value)||0.80;
+    if(vol>0) { $('c-weight').value=(vol*dens).toFixed(1); }
+  });
+});
 
 function calcUpdate() {
   const qty=num($('c-qty')?.value), weight=num($('c-weight')?.value), fp=num($('c-frag-pct')?.value);
@@ -1010,7 +1021,8 @@ function calcUpdate() {
 }
 
 $('btn-calc-reset').addEventListener('click', () => {
-  $('c-qty').value=100; $('c-weight').value=200; $('c-frag-pct').value=8;
+  $('c-qty').value=100; $('c-vol').value=''; $('c-density').value=0.80;
+  $('c-weight').value=200; $('c-frag-pct').value=8;
   $('c-wax-price').value=4.50; $('c-frag-price').value=25; $('c-container').value=1.20;
   $('c-wick').value=0.10; $('c-label').value=0.08; $('c-other').value=0; $('c-margin').value=40;
   $('c-name').value=''; calcUpdate();
