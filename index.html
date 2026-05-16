@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🕯️ Velas — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -502,32 +501,62 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 
 <script>
-// ── SUPABASE + STORAGE ────────────────────────────────────
-const SB_URL = 'https://qsxefidbfqzbyefsfjwg.supabase.co';
+// ── SUPABASE REST (sem biblioteca, usa fetch direto) ───────
+const SB_URL = 'https://qsxefidbfqzbyefsfjwg.supabase.co/rest/v1';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeGVmaWRiZnF6YnllZnNmandnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDQ3MDQsImV4cCI6MjA5NDUyMDcwNH0.7WNjp062Sx3S87YH3ZZFyq-Rr5NdWSbymlSBjDQogiA';
-const TBL = { inventory:'inventario', orders:'vendas', stock:'stock', expenses:'gastos', batches:'lotes', receitas:'receitas' };
+const SB_H  = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
+const TBL   = { inventory:'inventario', orders:'vendas', stock:'stock', expenses:'gastos', batches:'lotes', receitas:'receitas' };
+
+async function sbGet(tbl) {
+  const r = await fetch(`${SB_URL}/${tbl}?select=*&order=created_at.asc`, { headers: SB_H });
+  if (!r.ok) throw new Error(`GET ${tbl}: ${r.status} ${await r.text()}`);
+  return r.json();
+}
+async function sbInsert(tbl, row) {
+  const r = await fetch(`${SB_URL}/${tbl}`, {
+    method: 'POST', headers: { ...SB_H, Prefer: 'return=minimal' }, body: JSON.stringify(row)
+  });
+  if (!r.ok) throw new Error(`INSERT ${tbl}: ${r.status} ${await r.text()}`);
+}
+async function sbUpdate(tbl, id, row) {
+  const r = await fetch(`${SB_URL}/${tbl}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { ...SB_H, Prefer: 'return=minimal' }, body: JSON.stringify(row)
+  });
+  if (!r.ok) throw new Error(`UPDATE ${tbl}: ${r.status} ${await r.text()}`);
+}
+async function sbDelete(tbl, id) {
+  const r = await fetch(`${SB_URL}/${tbl}?id=eq.${encodeURIComponent(id)}`, {
+    method: 'DELETE', headers: SB_H
+  });
+  if (!r.ok) throw new Error(`DELETE ${tbl}: ${r.status} ${await r.text()}`);
+}
+async function sbDeleteAll(tbl) {
+  const r = await fetch(`${SB_URL}/${tbl}?id=not.is.null`, { method: 'DELETE', headers: SB_H });
+  if (!r.ok) throw new Error(`DELETEALL ${tbl}: ${r.status} ${await r.text()}`);
+}
 
 function toRow(k, obj) {
-  const r = {...obj}; delete r.created_at;
+  const r = { ...obj }; delete r.created_at;
   if (k === 'expenses') { r.descricao = r.desc; delete r.desc; }
   if (k === 'batches') {
-    const m = {waxKg:'wax_kg',fragG:'frag_g',waxCost:'wax_cost',fragCost:'frag_cost',contCost:'cont_cost',wickCost:'wick_cost',lblCost:'lbl_cost',totalCost:'total_cost'};
-    Object.entries(m).forEach(([js,sql]) => { r[sql]=r[js]; delete r[js]; });
+    const m = { waxKg:'wax_kg', fragG:'frag_g', waxCost:'wax_cost', fragCost:'frag_cost', contCost:'cont_cost', wickCost:'wick_cost', lblCost:'lbl_cost', totalCost:'total_cost' };
+    Object.entries(m).forEach(([js, sql]) => { r[sql] = r[js]; delete r[js]; });
   }
   return r;
 }
 function fromRow(k, r) {
-  const obj = {...r};
+  const obj = { ...r };
   if (k === 'expenses') { obj.desc = obj.descricao; delete obj.descricao; }
   if (k === 'batches') {
-    const m = {wax_kg:'waxKg',frag_g:'fragG',wax_cost:'waxCost',frag_cost:'fragCost',cont_cost:'contCost',wick_cost:'wickCost',lbl_cost:'lblCost',total_cost:'totalCost'};
-    Object.entries(m).forEach(([sql,js]) => { obj[js]=obj[sql]; delete obj[sql]; });
+    const m = { wax_kg:'waxKg', frag_g:'fragG', wax_cost:'waxCost', frag_cost:'fragCost', cont_cost:'contCost', wick_cost:'wickCost', lbl_cost:'lblCost', total_cost:'totalCost' };
+    Object.entries(m).forEach(([sql, js]) => { obj[js] = obj[sql]; delete obj[sql]; });
   }
   return obj;
 }
 
-let sbClient = null;
-try { sbClient = supabase.createClient(SB_URL, SB_KEY); } catch(e) { console.warn('Supabase init failed', e); }
+const LS_KEYS = ['inventory','orders','stock','expenses','batches','receitas'];
+function lsSave() { LS_KEYS.forEach(k => { try { localStorage.setItem('velas_'+k, JSON.stringify(CACHE[k]||[])); } catch {} }); }
+function lsLoad() { LS_KEYS.forEach(k => { try { CACHE[k] = JSON.parse(localStorage.getItem('velas_'+k)||'[]'); } catch { CACHE[k]=[]; } }); }
 
 const CACHE = {};
 const DB = {
@@ -536,71 +565,59 @@ const DB = {
     const old = CACHE[k] || [];
     CACHE[k] = v;
     try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
-    if (!sbClient || !TBL[k]) return;
-    const tbl = TBL[k];
-    if (v.length === 0) {
-      sbClient.from(tbl).delete().neq('id','').then(({error}) => { if(error) console.warn('SB clear:', error.message); });
-    } else if (v.length > old.length) {
-      const added = v.find(x => !old.find(y => y.id === x.id));
-      if (added) sbClient.from(tbl).insert(toRow(k, added)).then(({error}) => { if(error) console.warn('SB insert:', error.message); });
-    } else if (v.length === old.length) {
-      const changed = v.find(x => JSON.stringify(x) !== JSON.stringify(old.find(y => y.id === x.id)));
-      if (changed) sbClient.from(tbl).update(toRow(k, changed)).eq('id', changed.id).then(({error}) => { if(error) console.warn('SB update:', error.message); });
-    } else {
-      const deleted = old.find(x => !v.find(y => y.id === x.id));
-      if (deleted) sbClient.from(tbl).delete().eq('id', deleted.id).then(({error}) => { if(error) console.warn('SB delete:', error.message); });
-    }
+    const tbl = TBL[k]; if (!tbl) return;
+    (async () => {
+      try {
+        if (v.length === 0) {
+          await sbDeleteAll(tbl);
+        } else if (v.length > old.length) {
+          const added = v.find(x => !old.find(y => y.id === x.id));
+          if (added) await sbInsert(tbl, toRow(k, added));
+        } else if (v.length === old.length) {
+          const changed = v.find(x => JSON.stringify(x) !== JSON.stringify(old.find(y => y.id === x.id)));
+          if (changed) await sbUpdate(tbl, changed.id, toRow(k, changed));
+        } else {
+          const deleted = old.find(x => !v.find(y => y.id === x.id));
+          if (deleted) await sbDelete(tbl, deleted.id);
+        }
+      } catch(e) { console.warn('SB sync:', e.message); }
+    })();
   },
   importAll(k, v) {
     CACHE[k] = v;
-    const tbl = TBL[k];
-    if (!sbClient || !tbl || !v.length) return;
-    sbClient.from(tbl).upsert(v.map(obj => toRow(k, obj))).then(({error}) => { if(error) console.warn('SB import:', error.message); });
+    try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
+    const tbl = TBL[k]; if (!tbl || !v.length) return;
+    (async () => {
+      for (const obj of v) {
+        try { await sbInsert(tbl, toRow(k, obj)); } catch {}
+      }
+    })();
   },
   id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 };
 
-const LS_KEYS = ['inventory','orders','stock','expenses','batches','receitas'];
-
-function lsSave() {
-  LS_KEYS.forEach(k => { try { localStorage.setItem('velas_'+k, JSON.stringify(CACHE[k]||[])); } catch {} });
-}
-function lsLoad() {
-  LS_KEYS.forEach(k => { try { CACHE[k] = JSON.parse(localStorage.getItem('velas_'+k)||'[]'); } catch { CACHE[k]=[]; } });
-}
-
 async function loadAll(pg) {
-  const statusEl = $('sb-status');
-  if (!sbClient) {
-    if(statusEl){statusEl.textContent='⚠️ Sem ligação';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
-    lsLoad();
-    renderPage(pg||currentPage);
-    return;
-  }
-  if(statusEl){statusEl.textContent='⏳ A carregar...';statusEl.style.opacity='1';statusEl.style.color='var(--pl)';}
+  const statusEl = document.getElementById('sb-status');
+  if (statusEl) { statusEl.textContent = '⏳ A carregar...'; statusEl.style.opacity = '1'; statusEl.style.color = 'var(--pl)'; }
   try {
-    const [inv,ord,stk,exp,bat,rec] = await Promise.all([
-      sbClient.from('inventario').select('*'),
-      sbClient.from('vendas').select('*'),
-      sbClient.from('stock').select('*'),
-      sbClient.from('gastos').select('*'),
-      sbClient.from('lotes').select('*'),
-      sbClient.from('receitas').select('*'),
+    const [inv, ord, stk, exp, bat, rec] = await Promise.all([
+      sbGet('inventario'), sbGet('vendas'), sbGet('stock'),
+      sbGet('gastos'), sbGet('lotes'), sbGet('receitas')
     ]);
-    CACHE.inventory = (inv.data||[]).map(r => fromRow('inventory', r));
-    CACHE.orders    = (ord.data||[]).map(r => fromRow('orders', r));
-    CACHE.stock     = stk.data||[];
-    CACHE.expenses  = (exp.data||[]).map(r => fromRow('expenses', r));
-    CACHE.batches   = (bat.data||[]).map(r => fromRow('batches', r));
-    CACHE.receitas  = rec.data||[];
+    CACHE.inventory = inv.map(r => fromRow('inventory', r));
+    CACHE.orders    = ord.map(r => fromRow('orders', r));
+    CACHE.stock     = stk;
+    CACHE.expenses  = exp.map(r => fromRow('expenses', r));
+    CACHE.batches   = bat.map(r => fromRow('batches', r));
+    CACHE.receitas  = rec;
     lsSave();
-    if(statusEl){statusEl.textContent='✅ Supabase ligado';statusEl.style.opacity='1';statusEl.style.color='var(--ok)';}
+    if (statusEl) { statusEl.textContent = '✅ Supabase ligado'; statusEl.style.color = 'var(--ok)'; }
   } catch(e) {
     console.warn('Supabase load failed:', e);
     lsLoad();
-    if(statusEl){statusEl.textContent='⚠️ Offline (cache local)';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
+    if (statusEl) { statusEl.textContent = '⚠️ Offline (cache local)'; statusEl.style.color = 'var(--warn)'; }
   }
-  renderPage(pg||currentPage);
+  renderPage(pg || currentPage);
 }
 
 // ── UTILS ─────────────────────────────────────────────────
