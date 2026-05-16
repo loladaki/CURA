@@ -708,16 +708,8 @@ function last6Months() {
 const monthLabel = ym => { const [y,m] = ym.split('-'); return ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m-1]+' '+y.slice(2); };
 
 // ── MODALS ────────────────────────────────────────────────
-function openModal(id) { const el = $(id); if (el) el.classList.add('open'); }
-function closeModal(id) { const el = $(id); if (el) el.classList.remove('open'); }
-
-// Close on overlay click or [data-close] buttons
-document.addEventListener('click', e => {
-  // data-close buttons
-  if (e.target.dataset.close) { closeModal(e.target.dataset.close); return; }
-  // click outside modal
-  if (e.target.classList.contains('overlay')) { e.target.classList.remove('open'); }
-});
+function openModal(id) { var el=$(id); if(el) el.classList.add('open'); }
+function closeModal(id) { var el=$(id); if(el) el.classList.remove('open'); }
 
 // ── NAV ───────────────────────────────────────────────────
 let currentPage = 'dashboard';
@@ -838,8 +830,8 @@ function renderInventory() {
       <td class="tc">${i.min > 0 ? fmt(i.min, 3) : '—'}</td>
       <td>${low ? '<span class="badge b-red">⚠️ Baixo</span>' : '<span class="badge b-green">✅ OK</span>'}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ed btn-sm" data-edit-inv="${i.id}">✏️</button>
-        <button class="btn btn-del btn-sm" data-del="inventory" data-id="${i.id}">🗑️</button>
+        <button class="btn btn-ed btn-sm" data-action="edit-inv" data-id="${i.id}">✏️</button>
+        <button class="btn btn-del btn-sm" data-action="del" data-key="inventory" data-id="${i.id}">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -942,8 +934,8 @@ function renderReceitas() {
       ${r.color?`<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">🎨 ${r.color}</div>`:''}
       ${r.notes?`<div style="font-size:.78rem;background:var(--bg2);padding:6px 8px;border-radius:6px;margin-top:6px">${r.notes}</div>`:''}
       <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
-        <button class="btn btn-ed btn-sm" data-edit-rec="${r.id}">✏️ Editar</button>
-        <button class="btn btn-del btn-sm" data-del="receitas" data-id="${r.id}">🗑️</button>
+        <button class="btn btn-ed btn-sm" data-action="edit-rec" data-id="${r.id}">✏️ Editar</button>
+        <button class="btn btn-del btn-sm" data-action="del" data-key="receitas" data-id="${r.id}">🗑️</button>
       </div>
     </div>`).join('');
 }
@@ -979,8 +971,8 @@ function renderStock() {
       <td class="tr">${mar!==null?`<span class="badge ${mar>=30?'b-green':mar>=15?'b-yellow':'b-red'}">${fmt(mar,0)}%</span>`:'—'}</td>
       <td>${zero?'<span class="badge b-red">Esgotado</span>':num(i.qty)<5?'<span class="badge b-yellow">Baixo</span>':'<span class="badge b-green">OK</span>'}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-ed btn-sm" data-edit-stock="${i.id}">✏️</button>
-        <button class="btn btn-del btn-sm" data-del="stock" data-id="${i.id}">🗑️</button>
+        <button class="btn btn-ed btn-sm" data-action="edit-stock" data-id="${i.id}">✏️</button>
+        <button class="btn btn-del btn-sm" data-action="del" data-key="stock" data-id="${i.id}">🗑️</button>
       </td>
     </tr>`;
   }).join('');
@@ -1044,8 +1036,8 @@ function renderOrders() {
     <td>${o.pay?`<span class="badge b-gray">${o.pay}</span>`:'—'}</td>
     <td>${statusBadge(o.status)}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-ed btn-sm" data-edit-order="${o.id}">✏️</button>
-      <button class="btn btn-del btn-sm" data-del="orders" data-id="${o.id}">🗑️</button>
+      <button class="btn btn-ed btn-sm" data-action="edit-order" data-id="${o.id}">✏️</button>
+      <button class="btn btn-del btn-sm" data-action="del" data-key="orders" data-id="${o.id}">🗑️</button>
     </td>
   </tr>`).join('');
 }
@@ -1110,7 +1102,7 @@ function renderExpenses() {
     <td><span class="badge" style="background:${CAT_COLORS[e.cat]||'#ccc'}22;color:${CAT_COLORS[e.cat]||'#555'}">${CAT_LABELS[e.cat]||e.cat}</span></td>
     <td class="tr bold" style="color:var(--err)">${eur(e.amount)}</td>
     <td class="muted" style="font-size:.75rem">${e.vendor||'—'}</td>
-    <td><button class="btn btn-ed btn-sm" data-edit-exp="${e.id}">✏️</button> <button class="btn btn-del btn-sm" data-del="expenses" data-id="${e.id}">🗑️</button></td>
+    <td><button class="btn btn-ed btn-sm" data-action="edit-exp" data-id="${e.id}">✏️</button> <button class="btn btn-del btn-sm" data-action="del" data-key="expenses" data-id="${e.id}">🗑️</button></td>
   </tr>`).join('')+`<tr style="background:var(--bg2)"><td colspan="3" class="tr bold">Total filtrado:</td><td class="tr bold" style="color:var(--err)">${eur(total)}</td><td colspan="2"></td></tr>`;
 }
 $('btn-add-exp').addEventListener('click', () => {
@@ -1232,77 +1224,74 @@ function renderAnalises() {
   makeChart('chart-inv-type',{type:'doughnut',data:{labels:itK,datasets:[{data:itK.map(k=>invByType[k]),backgroundColor:PAL,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}});
 }
 
-// ── DELEGATED EDIT & DELETE ───────────────────────────────
-document.addEventListener('click', e => {
-  const t = el => e.target.closest(el);
-  // Edit handlers
-  const edInv = t('[data-edit-inv]');
-  if (edInv) {
-    const i=DB.get('inventory').find(x=>x.id===edInv.dataset.editInv); if(!i) return;
-    $('inv-modal-title').textContent='Editar Material';
-    $('inv-id').value=i.id; $('inv-name').value=i.name; $('inv-type').value=i.type; $('inv-unit').value=i.unit;
-    $('inv-qty').value=i.qty; $('inv-price').value=i.price; $('inv-min').value=i.min||''; $('inv-supplier').value=i.supplier||''; $('inv-notes').value=i.notes||'';
-    openModal('inv-modal');
-  }
-  const edStock = t('[data-edit-stock]');
-  if (edStock) {
-    const i=DB.get('stock').find(x=>x.id===edStock.dataset.editStock); if(!i) return;
-    $('stock-modal-title').textContent='Editar Vela';
-    $('stock-id').value=i.id; $('stock-name').value=i.name; $('stock-frag').value=i.frag||''; $('stock-size').value=i.size||'';
-    $('stock-qty').value=i.qty; $('stock-cost').value=i.cost||''; $('stock-pvp').value=i.pvp||''; $('stock-notes').value=i.notes||'';
-    openModal('stock-modal');
-  }
-  const edOrder = t('[data-edit-order]');
-  if (edOrder) {
-    const o=DB.get('orders').find(x=>x.id===edOrder.dataset.editOrder); if(!o) return;
-    $('order-modal-title').textContent='Editar Encomenda';
-    $('order-id').value=o.id; $('order-date').value=o.date; $('order-client').value=o.client;
-    $('order-product').value=o.product; $('order-qty').value=o.qty; $('order-price').value=o.price;
-    $('order-status').value=o.status; $('order-pay').value=o.pay||''; $('order-notes').value=o.notes||'';
-    openModal('order-modal');
-  }
-  const edExp = t('[data-edit-exp]');
-  if (edExp) {
-    const ex=DB.get('expenses').find(x=>x.id===edExp.dataset.editExp); if(!ex) return;
-    $('exp-modal-title').textContent='Editar Despesa';
-    $('exp-id').value=ex.id; $('exp-date').value=ex.date; $('exp-cat').value=ex.cat;
-    $('exp-desc').value=ex.desc; $('exp-amount').value=ex.amount; $('exp-vendor').value=ex.vendor||''; $('exp-notes').value=ex.notes||'';
-    openModal('exp-modal');
-  }
-  const edRec = t('[data-edit-rec]');
-  if (edRec) {
-    const r=DB.get('receitas').find(x=>x.id===edRec.dataset.editRec); if(!r) return;
-    $('rec-modal-title').textContent='Editar Receita';
-    $('rec-id').value=r.id; $('rec-name').value=r.name; $('rec-wax').value=r.wax||''; $('rec-weight').value=r.weight||'';
-    $('rec-fragpct').value=r.fragpct||''; $('rec-temp').value=r.temp||''; $('rec-wick').value=r.wick||'';
-    $('rec-container').value=r.container||''; $('rec-cure').value=r.cure||''; $('rec-frags').value=r.frags||'';
-    $('rec-color').value=r.color||''; $('rec-notes').value=r.notes||''; buildStars(r.rating||0); recRating=r.rating||0; $('rec-rating').value=recRating;
-    openModal('rec-modal');
-  }
-  // Delete handler — 2 cliques para confirmar (evita confirm() bloqueado)
-  const delBtn = t('[data-del]');
-  if (delBtn && delBtn.dataset.id) {
-    const btn = delBtn;
-    if (btn.dataset.confirming !== '1') {
-      btn.dataset.confirming = '1';
-      btn.textContent = '⚠️ Tens a certeza?';
-      btn.style.cssText = 'background:var(--err);color:#fff;padding:4px 8px;font-size:.73rem';
-      setTimeout(() => {
-        if (btn.dataset.confirming === '1') {
-          btn.dataset.confirming = '';
-          btn.textContent = '🗑️';
-          btn.style.cssText = '';
-        }
-      }, 3000);
-      return;
-    }
-    btn.dataset.confirming = '';
-    const key = btn.dataset.del, id = btn.dataset.id;
-    const updated = DB.get(key).filter(x => x.id !== id);
-    DB.set(key, updated);
-    renderPage(currentPage);
+// ── CLICK HANDLER UNIFICADO ───────────────────────────────
+document.addEventListener('click', function(e) {
+  var el = e.target;
+  for (var n = 0; n < 6 && el && el.tagName; n++) {
+    // Fechar modal
+    if (el.dataset && el.dataset.close) { closeModal(el.dataset.close); return; }
+    // Overlay backdrop
+    if (el.classList && el.classList.contains('overlay')) { el.classList.remove('open'); return; }
+    // Botões de ação
+    if (el.dataset && el.dataset.action) { doAction(el.dataset.action, el.dataset.id, el.dataset.key, el); return; }
+    el = el.parentElement;
   }
 });
+
+function doAction(action, id, key, btn) {
+  try {
+    if (action === 'edit-inv') {
+      var i = DB.get('inventory').find(function(x){return x.id===id;}); if(!i) return;
+      $('inv-modal-title').textContent='Editar Material';
+      $('inv-id').value=i.id; $('inv-name').value=i.name; $('inv-type').value=i.type; $('inv-unit').value=i.unit;
+      $('inv-qty').value=i.qty; $('inv-price').value=i.price; $('inv-min').value=i.min||''; $('inv-supplier').value=i.supplier||''; $('inv-notes').value=i.notes||'';
+      openModal('inv-modal');
+    } else if (action === 'edit-stock') {
+      var i = DB.get('stock').find(function(x){return x.id===id;}); if(!i) return;
+      $('stock-modal-title').textContent='Editar Vela';
+      $('stock-id').value=i.id; $('stock-name').value=i.name; $('stock-frag').value=i.frag||''; $('stock-size').value=i.size||'';
+      $('stock-qty').value=i.qty; $('stock-cost').value=i.cost||''; $('stock-pvp').value=i.pvp||''; $('stock-notes').value=i.notes||'';
+      openModal('stock-modal');
+    } else if (action === 'edit-order') {
+      var o = DB.get('orders').find(function(x){return x.id===id;}); if(!o) return;
+      $('order-modal-title').textContent='Editar Encomenda';
+      $('order-id').value=o.id; $('order-date').value=o.date; $('order-client').value=o.client;
+      $('order-product').value=o.product; $('order-qty').value=o.qty; $('order-price').value=o.price;
+      $('order-status').value=o.status; $('order-pay').value=o.pay||''; $('order-notes').value=o.notes||'';
+      openModal('order-modal');
+    } else if (action === 'edit-exp') {
+      var ex = DB.get('expenses').find(function(x){return x.id===id;}); if(!ex) return;
+      $('exp-modal-title').textContent='Editar Despesa';
+      $('exp-id').value=ex.id; $('exp-date').value=ex.date; $('exp-cat').value=ex.cat;
+      $('exp-desc').value=ex.desc; $('exp-amount').value=ex.amount; $('exp-vendor').value=ex.vendor||''; $('exp-notes').value=ex.notes||'';
+      openModal('exp-modal');
+    } else if (action === 'edit-rec') {
+      var r = DB.get('receitas').find(function(x){return x.id===id;}); if(!r) return;
+      $('rec-modal-title').textContent='Editar Receita';
+      $('rec-id').value=r.id; $('rec-name').value=r.name; $('rec-wax').value=r.wax||''; $('rec-weight').value=r.weight||'';
+      $('rec-fragpct').value=r.fragpct||''; $('rec-temp').value=r.temp||''; $('rec-wick').value=r.wick||'';
+      $('rec-container').value=r.container||''; $('rec-cure').value=r.cure||''; $('rec-frags').value=r.frags||'';
+      $('rec-color').value=r.color||''; $('rec-notes').value=r.notes||''; buildStars(r.rating||0); recRating=r.rating||0; $('rec-rating').value=recRating;
+      openModal('rec-modal');
+    } else if (action === 'del') {
+      if (btn.dataset.confirming !== '1') {
+        btn.dataset.confirming = '1';
+        btn.textContent = '⚠️ Apagar?';
+        btn.style.background = 'var(--err)'; btn.style.color = '#fff';
+        setTimeout(function() {
+          if (btn.dataset.confirming === '1') {
+            btn.dataset.confirming = ''; btn.textContent = '🗑️';
+            btn.style.background = ''; btn.style.color = '';
+          }
+        }, 3000);
+        return;
+      }
+      btn.dataset.confirming = '';
+      DB.set(key, DB.get(key).filter(function(x){return x.id!==id;}));
+      renderPage(currentPage);
+    }
+  } catch(err) { console.error('doAction error:', err); }
+}
 
 // ── BACKUP ────────────────────────────────────────────────
 $('btn-export').addEventListener('click', () => {
