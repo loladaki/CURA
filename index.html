@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🕯️ Velas — Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -535,6 +535,7 @@ const DB = {
   set(k, v) {
     const old = CACHE[k] || [];
     CACHE[k] = v;
+    try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
     if (!sbClient || !TBL[k]) return;
     const tbl = TBL[k];
     if (v.length === 0) {
@@ -559,9 +560,24 @@ const DB = {
   id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 };
 
-async function loadAll() {
+const LS_KEYS = ['inventory','orders','stock','expenses','batches','receitas'];
+
+function lsSave() {
+  LS_KEYS.forEach(k => { try { localStorage.setItem('velas_'+k, JSON.stringify(CACHE[k]||[])); } catch {} });
+}
+function lsLoad() {
+  LS_KEYS.forEach(k => { try { CACHE[k] = JSON.parse(localStorage.getItem('velas_'+k)||'[]'); } catch { CACHE[k]=[]; } });
+}
+
+async function loadAll(pg) {
   const statusEl = $('sb-status');
-  if (!sbClient) { if(statusEl){statusEl.textContent='⚠️ Sem Supabase';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';} renderDashboard(); return; }
+  if (!sbClient) {
+    if(statusEl){statusEl.textContent='⚠️ Sem ligação';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
+    lsLoad();
+    renderPage(pg||currentPage);
+    return;
+  }
+  if(statusEl){statusEl.textContent='⏳ A carregar...';statusEl.style.opacity='1';statusEl.style.color='var(--pl)';}
   try {
     const [inv,ord,stk,exp,bat,rec] = await Promise.all([
       sbClient.from('inventario').select('*'),
@@ -577,12 +593,14 @@ async function loadAll() {
     CACHE.expenses  = (exp.data||[]).map(r => fromRow('expenses', r));
     CACHE.batches   = (bat.data||[]).map(r => fromRow('batches', r));
     CACHE.receitas  = rec.data||[];
+    lsSave();
     if(statusEl){statusEl.textContent='✅ Supabase ligado';statusEl.style.opacity='1';statusEl.style.color='var(--ok)';}
   } catch(e) {
     console.warn('Supabase load failed:', e);
-    if(statusEl){statusEl.textContent='⚠️ Modo offline';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
+    lsLoad();
+    if(statusEl){statusEl.textContent='⚠️ Offline (cache local)';statusEl.style.opacity='1';statusEl.style.color='var(--warn)';}
   }
-  renderDashboard();
+  renderPage(pg||currentPage);
 }
 
 // ── UTILS ─────────────────────────────────────────────────
@@ -645,7 +663,7 @@ document.querySelectorAll('.nav-item').forEach(el => {
     const pgEl = $('pg-' + pg);
     if (pgEl) pgEl.classList.add('active');
     currentPage = pg;
-    renderPage(pg);
+    loadAll(pg);
   });
 });
 
@@ -1235,7 +1253,7 @@ $('btn-clear-all').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────
 buildStars(0);
 calcUpdate();
-loadAll();
+loadAll('dashboard');
 </script>
 </body>
 </html>
