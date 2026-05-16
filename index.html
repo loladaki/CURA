@@ -519,9 +519,14 @@ function sbStatus(msg, color) {
 }
 
 async function sbGet(tbl) {
-  const r = await fetch(`${SB_URL}/${tbl}?select=*`, { headers: SB_H });
-  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] ${r.status}: ${txt}`); }
-  return r.json();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(`${SB_URL}/${tbl}?select=*`, { headers: SB_H, signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] ${r.status}: ${txt}`); }
+    return r.json();
+  } catch(e) { clearTimeout(timer); throw e; }
 }
 async function sbUpsert(tbl, row) {
   const r = await fetch(`${SB_URL}/${tbl}`, {
@@ -616,12 +621,12 @@ const TABLES = [
 ];
 
 async function loadAll(pg) {
-  sbStatus('⏳ A carregar...', 'var(--pl)');
-
-  // 1. Carrega localStorage como base (nunca perde dados)
+  // 1. Mostra dados locais imediatamente — sem esperar pelo Supabase
   lsLoad();
+  renderPage(pg || currentPage);
+  sbStatus('⏳ A ligar ao Supabase...', 'var(--pl)');
 
-  // 2. Busca todas as tabelas do Supabase em paralelo
+  // 2. Tenta ligar ao Supabase em segundo plano
   const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
   let erros = 0;
   const toSync = [];
@@ -632,29 +637,24 @@ async function loadAll(pg) {
       const sbData = res.value.map(r => fromRow(k, r));
       const localData = CACHE[k] || [];
       if (sbData.length > 0) {
-        // Supabase tem dados → usa-os (fonte de verdade)
         CACHE[k] = sbData;
       } else if (localData.length > 0) {
-        // Supabase vazio mas local tem dados → sincroniza local → Supabase
         toSync.push({ tbl, k });
       }
-      // se ambos vazios, fica vazio
     } else {
       erros++;
-      console.warn('Falhou:', TABLES[i].tbl, res.reason?.message);
-      // CACHE[k] já foi preenchido pelo lsLoad() acima
+      console.warn('SB falhou:', TABLES[i].tbl, res.reason?.message);
     }
   });
 
   lsSave();
-
-  if (erros === 0) sbStatus('✅ Supabase ligado', 'var(--ok)');
-  else if (erros === TABLES.length) sbStatus('⚠️ Offline — cache local', 'var(--warn)');
-  else sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
-
   renderPage(pg || currentPage);
 
-  // 3. Async: empurra dados locais para o Supabase (sem bloquear o UI)
+  if (erros === 0) sbStatus('✅ Supabase ligado', 'var(--ok)');
+  else if (erros === TABLES.length) sbStatus('⚠️ Offline — dados locais', 'var(--warn)');
+  else sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
+
+  // 3. Sincroniza dados locais para o Supabase se este estava vazio
   if (toSync.length > 0) {
     (async () => {
       let ok = 0, fail = 0;
@@ -664,8 +664,8 @@ async function loadAll(pg) {
           catch(e) { fail++; console.warn('sync-up falhou:', e.message); }
         }
       }
-      if (fail === 0) sbStatus(`✅ ${ok} item(s) sincronizado(s)`, 'var(--ok)');
-      else sbStatus(`⚠️ Sync parcial (${fail} erro(s))`, 'var(--warn)');
+      sbStatus(fail === 0 ? `✅ ${ok} item(s) sincronizado(s)` : `⚠️ Sync parcial (${fail} erro(s))`,
+               fail === 0 ? 'var(--ok)' : 'var(--warn)');
     })();
   }
 }
