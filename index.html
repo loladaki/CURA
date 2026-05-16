@@ -1245,38 +1245,44 @@ function renderAnalises() {
 
 // ── DELEGATED EDIT & DELETE ───────────────────────────────
 document.addEventListener('click', e => {
+  const t = el => e.target.closest(el);
   // Edit handlers
-  if (e.target.dataset.editInv) {
-    const i=DB.get('inventory').find(x=>x.id===e.target.dataset.editInv); if(!i) return;
+  const edInv = t('[data-edit-inv]');
+  if (edInv) {
+    const i=DB.get('inventory').find(x=>x.id===edInv.dataset.editInv); if(!i) return;
     $('inv-modal-title').textContent='Editar Material';
     $('inv-id').value=i.id; $('inv-name').value=i.name; $('inv-type').value=i.type; $('inv-unit').value=i.unit;
     $('inv-qty').value=i.qty; $('inv-price').value=i.price; $('inv-min').value=i.min||''; $('inv-supplier').value=i.supplier||''; $('inv-notes').value=i.notes||'';
     openModal('inv-modal');
   }
-  if (e.target.dataset.editStock) {
-    const i=DB.get('stock').find(x=>x.id===e.target.dataset.editStock); if(!i) return;
+  const edStock = t('[data-edit-stock]');
+  if (edStock) {
+    const i=DB.get('stock').find(x=>x.id===edStock.dataset.editStock); if(!i) return;
     $('stock-modal-title').textContent='Editar Vela';
     $('stock-id').value=i.id; $('stock-name').value=i.name; $('stock-frag').value=i.frag||''; $('stock-size').value=i.size||'';
     $('stock-qty').value=i.qty; $('stock-cost').value=i.cost||''; $('stock-pvp').value=i.pvp||''; $('stock-notes').value=i.notes||'';
     openModal('stock-modal');
   }
-  if (e.target.dataset.editOrder) {
-    const o=DB.get('orders').find(x=>x.id===e.target.dataset.editOrder); if(!o) return;
+  const edOrder = t('[data-edit-order]');
+  if (edOrder) {
+    const o=DB.get('orders').find(x=>x.id===edOrder.dataset.editOrder); if(!o) return;
     $('order-modal-title').textContent='Editar Encomenda';
     $('order-id').value=o.id; $('order-date').value=o.date; $('order-client').value=o.client;
     $('order-product').value=o.product; $('order-qty').value=o.qty; $('order-price').value=o.price;
     $('order-status').value=o.status; $('order-pay').value=o.pay||''; $('order-notes').value=o.notes||'';
     openModal('order-modal');
   }
-  if (e.target.dataset.editExp) {
-    const ex=DB.get('expenses').find(x=>x.id===e.target.dataset.editExp); if(!ex) return;
+  const edExp = t('[data-edit-exp]');
+  if (edExp) {
+    const ex=DB.get('expenses').find(x=>x.id===edExp.dataset.editExp); if(!ex) return;
     $('exp-modal-title').textContent='Editar Despesa';
     $('exp-id').value=ex.id; $('exp-date').value=ex.date; $('exp-cat').value=ex.cat;
     $('exp-desc').value=ex.desc; $('exp-amount').value=ex.amount; $('exp-vendor').value=ex.vendor||''; $('exp-notes').value=ex.notes||'';
     openModal('exp-modal');
   }
-  if (e.target.dataset.editRec) {
-    const r=DB.get('receitas').find(x=>x.id===e.target.dataset.editRec); if(!r) return;
+  const edRec = t('[data-edit-rec]');
+  if (edRec) {
+    const r=DB.get('receitas').find(x=>x.id===edRec.dataset.editRec); if(!r) return;
     $('rec-modal-title').textContent='Editar Receita';
     $('rec-id').value=r.id; $('rec-name').value=r.name; $('rec-wax').value=r.wax||''; $('rec-weight').value=r.weight||'';
     $('rec-fragpct').value=r.fragpct||''; $('rec-temp').value=r.temp||''; $('rec-wick').value=r.wick||'';
@@ -1285,8 +1291,9 @@ document.addEventListener('click', e => {
     openModal('rec-modal');
   }
   // Delete handler — 2 cliques para confirmar (evita confirm() bloqueado)
-  if (e.target.dataset.del && e.target.dataset.id) {
-    const btn = e.target;
+  const delBtn = t('[data-del]');
+  if (delBtn && delBtn.dataset.id) {
+    const btn = delBtn;
     if (btn.dataset.confirming !== '1') {
       btn.dataset.confirming = '1';
       btn.textContent = '⚠️ Tens a certeza?';
