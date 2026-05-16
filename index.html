@@ -615,70 +615,59 @@ const TABLES = [
   { tbl:'receitas',   k:'receitas'  },
 ];
 
-async function testWrite() {
-  const id = '_test_' + Date.now();
-  try {
-    const r = await fetch(`${SB_URL}/inventario`, {
-      method: 'POST',
-      headers: { ...SB_H, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ id, name: '__teste__' })
-    });
-    if (!r.ok) {
-      const txt = await r.text();
-      let detail = txt;
-      try { detail = JSON.parse(txt).message || txt; } catch {}
-      return { ok: false, error: `HTTP ${r.status}: ${detail}` };
-    }
-    fetch(`${SB_URL}/inventario?id=eq.${id}`, { method: 'DELETE', headers: SB_H });
-    return { ok: true };
-  } catch(e) {
-    return { ok: false, error: e.message };
-  }
-}
-
 async function loadAll(pg) {
   sbStatus('⏳ A carregar...', 'var(--pl)');
 
-  if (!window._sbReady) {
-    const test = await testWrite();
-    if (!test.ok) {
-      sbStatus('❌ Sem acesso escrita', '#e05252');
-      alert(
-        '⚠️ O Supabase não aceita escritas!\n\n' +
-        'Erro: ' + test.error + '\n\n' +
-        'Solução:\n' +
-        '1. Abre o Supabase SQL Editor\n' +
-        '2. Corre o ficheiro  fix-supabase.sql\n' +
-        '3. Recarrega a página'
-      );
-      lsLoad();
-      renderPage(pg || currentPage);
-      return;
-    }
-    window._sbReady = true;
-  }
+  // 1. Carrega localStorage como base (nunca perde dados)
+  lsLoad();
 
+  // 2. Busca todas as tabelas do Supabase em paralelo
   const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
   let erros = 0;
+  const toSync = [];
+
   results.forEach((res, i) => {
-    const { k } = TABLES[i];
+    const { tbl, k } = TABLES[i];
     if (res.status === 'fulfilled') {
-      CACHE[k] = res.value.map(r => fromRow(k, r));
+      const sbData = res.value.map(r => fromRow(k, r));
+      const localData = CACHE[k] || [];
+      if (sbData.length > 0) {
+        // Supabase tem dados → usa-os (fonte de verdade)
+        CACHE[k] = sbData;
+      } else if (localData.length > 0) {
+        // Supabase vazio mas local tem dados → sincroniza local → Supabase
+        toSync.push({ tbl, k });
+      }
+      // se ambos vazios, fica vazio
     } else {
       erros++;
       console.warn('Falhou:', TABLES[i].tbl, res.reason?.message);
-      try { const s = localStorage.getItem('velas_'+k); if (s) CACHE[k] = JSON.parse(s); } catch {}
+      // CACHE[k] já foi preenchido pelo lsLoad() acima
     }
   });
-  if (erros === 0) {
-    lsSave();
-    sbStatus('✅ Supabase ligado', 'var(--ok)');
-  } else if (erros === TABLES.length) {
-    sbStatus('⚠️ Offline — cache local', 'var(--warn)');
-  } else {
-    sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
-  }
+
+  lsSave();
+
+  if (erros === 0) sbStatus('✅ Supabase ligado', 'var(--ok)');
+  else if (erros === TABLES.length) sbStatus('⚠️ Offline — cache local', 'var(--warn)');
+  else sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
+
   renderPage(pg || currentPage);
+
+  // 3. Async: empurra dados locais para o Supabase (sem bloquear o UI)
+  if (toSync.length > 0) {
+    (async () => {
+      let ok = 0, fail = 0;
+      for (const { tbl, k } of toSync) {
+        for (const item of (CACHE[k] || [])) {
+          try { await sbUpsert(tbl, toRow(k, item)); ok++; }
+          catch(e) { fail++; console.warn('sync-up falhou:', e.message); }
+        }
+      }
+      if (fail === 0) sbStatus(`✅ ${ok} item(s) sincronizado(s)`, 'var(--ok)');
+      else sbStatus(`⚠️ Sync parcial (${fail} erro(s))`, 'var(--warn)');
+    })();
+  }
 }
 
 // ── UTILS ─────────────────────────────────────────────────
