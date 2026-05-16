@@ -1,0 +1,1042 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🕯️ Velas — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --p:#c8792a;--pd:#9e5e1e;--pl:#f0c080;
+  --bg:#faf6f0;--bg2:#f5ede0;
+  --sb:#2c1a0e;--sbt:#f5e6d3;--sbh:#3d2512;
+  --card:#fff;--text:#2c1a0e;--muted:#7a5c3e;
+  --border:#e8d5b8;
+  --ok:#4a9e6b;--err:#e05252;--warn:#e8a030;--info:#5a8fd4
+}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
+.sidebar{width:230px;min-height:100vh;background:var(--sb);color:var(--sbt);display:flex;flex-direction:column;position:fixed;top:0;left:0;z-index:100;overflow-y:auto}
+.sb-logo{padding:20px 18px;border-bottom:1px solid rgba(255,255,255,.1)}
+.sb-logo h1{font-size:1.15rem;font-weight:700;color:var(--pl)}
+.sb-logo p{font-size:.7rem;opacity:.5;margin-top:2px}
+.sb-nav{flex:1;padding:8px 0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 18px;cursor:pointer;transition:background .15s;font-size:.85rem;border-left:3px solid transparent}
+.nav-item:hover{background:var(--sbh)}
+.nav-item.active{background:var(--sbh);border-left-color:var(--pl);color:var(--pl)}
+.nav-icon{font-size:.95rem;width:18px;text-align:center}
+.sb-footer{padding:12px 18px;border-top:1px solid rgba(255,255,255,.1);font-size:.68rem;opacity:.35}
+.main{margin-left:230px;flex:1;padding:22px;min-width:0}
+.page{display:none}.page.active{display:block}
+.page-hdr{margin-bottom:18px}
+.page-hdr h2{font-size:1.45rem;font-weight:700}
+.page-hdr p{color:var(--muted);font-size:.85rem;margin-top:3px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.card-lbl{font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.card-val{font-size:1.6rem;font-weight:700;margin-top:4px}
+.card-sub{font-size:.72rem;color:var(--muted);margin-top:2px}
+.card.accent{border-color:var(--p)}.card.accent .card-val{color:var(--pd)}
+.card.ok{border-color:var(--ok)}.card.ok .card-val{color:var(--ok)}
+.card.err{border-color:var(--err)}.card.err .card-val{color:var(--err)}
+.box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.box h3{font-size:.92rem;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:7px}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{background:var(--bg2);padding:8px 10px;text-align:left;font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);border-bottom:1px solid var(--border)}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:8px;cursor:pointer;font-size:.83rem;font-weight:500;transition:all .2s}
+.btn-p{background:var(--p);color:#fff}.btn-p:hover{background:var(--pd)}
+.btn-sm{padding:4px 8px;font-size:.73rem}
+.btn-del{background:#fee2e2;color:var(--err)}.btn-del:hover{background:var(--err);color:#fff}
+.btn-ed{background:#e0f0ff;color:var(--info)}.btn-ed:hover{background:var(--info);color:#fff}
+.btn-ghost{background:var(--bg2);color:var(--text)}.btn-ghost:hover{background:var(--border)}
+.btn-ok{background:#d1fae5;color:var(--ok)}.btn-ok:hover{background:var(--ok);color:#fff}
+.fg{display:flex;flex-direction:column;gap:3px}
+.fg label{font-size:.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.fg input,.fg select,.fg textarea{padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:.83rem;background:var(--bg);color:var(--text);transition:border-color .2s}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:var(--p)}
+.fg textarea{resize:vertical;min-height:56px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:12px}
+.badge{display:inline-block;padding:2px 7px;border-radius:20px;font-size:.68rem;font-weight:600}
+.b-green{background:#d1fae5;color:#065f46}.b-yellow{background:#fef3c7;color:#92400e}
+.b-red{background:#fee2e2;color:#991b1b}.b-blue{background:#dbeafe;color:#1e40af}
+.b-gray{background:#f3f4f6;color:#374151}.b-orange{background:#fff7ed;color:#9a3412}
+.b-purple{background:#ede9fe;color:#5b21b6}
+.calc-res{background:linear-gradient(135deg,var(--pd),#7a4a18);color:#fff;border-radius:12px;padding:20px;margin-top:16px}
+.calc-res h3{margin-bottom:12px;font-size:.95rem;opacity:.85}
+.calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:11px}
+.ci{background:rgba(255,255,255,.12);border-radius:8px;padding:12px}
+.ci-lbl{font-size:.7rem;opacity:.7;margin-bottom:2px}
+.ci-val{font-size:1.2rem;font-weight:700}
+.ci.hi{background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.3)}
+.ci.hi .ci-val{font-size:1.6rem;color:var(--pl)}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.tl-left{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.tl-right{display:flex;gap:7px;align-items:center}
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:14px;padding:24px;width:90%;max-width:580px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-hdr h3{font-size:1rem;font-weight:700}
+.modal-x{width:28px;height:28px;border:none;background:var(--bg2);border-radius:7px;cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center}
+.modal-ftr{display:flex;gap:7px;justify-content:flex-end;margin-top:16px}
+.empty{text-align:center;padding:32px 16px;color:var(--muted)}
+.empty-ico{font-size:2rem;margin-bottom:8px}
+.empty p{font-size:.85rem}
+.flt{padding:4px 11px;border:1px solid var(--border);border-radius:20px;background:#fff;cursor:pointer;font-size:.76rem;transition:all .2s}
+.flt.active{background:var(--p);border-color:var(--p);color:#fff}
+.alert{padding:9px 13px;border-radius:8px;font-size:.82rem;margin-bottom:12px}
+.alert-info{background:#e0f0ff;color:#1e40af;border:1px solid #bfdbfe}
+.alert-warn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.tr{text-align:right}.tc{text-align:center}
+.bold{font-weight:700}.muted{color:var(--muted)}
+.hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.chart-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.chart-box h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:var(--text)}
+.chart-wrap{position:relative;height:220px}
+.star{color:var(--warn);font-size:.9rem}
+.rating-row{display:flex;gap:3px;cursor:pointer}
+.rec-tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.7rem;background:var(--bg2);margin:2px;border:1px solid var(--border)}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+@media(max-width:750px){
+  .sidebar{width:180px}.main{margin-left:180px;padding:12px}
+  .chart-row{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sb-logo"><h1>🕯️ Velas</h1><p>Gestão da tua empresa</p></div>
+  <div class="sb-nav">
+    <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span> Dashboard</div>
+    <div class="nav-item" data-page="inventario"><span class="nav-icon">📦</span> Inventário</div>
+    <div class="nav-item" data-page="calculadora"><span class="nav-icon">🧮</span> Calculadora</div>
+    <div class="nav-item" data-page="receitas"><span class="nav-icon">🧪</span> Receitas</div>
+    <div class="nav-item" data-page="stock"><span class="nav-icon">🕯️</span> Stock de Velas</div>
+    <div class="nav-item" data-page="vendas"><span class="nav-icon">🛒</span> Vendas & Encomendas</div>
+    <div class="nav-item" data-page="gastos"><span class="nav-icon">💸</span> Gastos & Despesas</div>
+    <div class="nav-item" data-page="analises"><span class="nav-icon">📈</span> Análises</div>
+    <div class="nav-item" data-page="definicoes"><span class="nav-icon">⚙️</span> Definições</div>
+  </div>
+  <div class="sb-footer">Dados guardados localmente</div>
+</nav>
+
+<main class="main">
+
+<!-- DASHBOARD -->
+<div class="page active" id="pg-dashboard">
+  <div class="page-hdr"><h2>📊 Dashboard</h2><p id="dash-date"></p></div>
+  <div class="cards" id="dash-cards"></div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>📅 Vendas — últimos 6 meses</h3><div class="chart-wrap"><canvas id="chart-sales"></canvas></div></div>
+    <div class="chart-box"><h3>💸 Despesas por categoria</h3><div class="chart-wrap"><canvas id="chart-exp-cat"></canvas></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="box"><h3>🛒 Últimas encomendas</h3><div id="dash-orders"></div></div>
+    <div class="box"><h3>⚠️ Stock baixo / esgotado</h3><div id="dash-lowstock"></div></div>
+  </div>
+</div>
+
+<!-- INVENTÁRIO -->
+<div class="page" id="pg-inventario">
+  <div class="page-hdr"><h2>📦 Inventário de Matérias-Primas</h2><p>Cera, essências, pavios, cimento, gesso, moldes e mais</p></div>
+  <div class="box">
+    <div class="toolbar">
+      <div class="tl-left">
+        <button class="btn btn-p" id="btn-add-inv">+ Adicionar Material</button>
+        <select id="inv-type-filter" onchange="renderInventory()" style="padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:.8rem;background:var(--bg)">
+          <option value="">Todos os tipos</option>
+        </select>
+      </div>
+      <div class="tl-right"><span class="muted" style="font-size:.78rem" id="inv-total-lbl"></span></div>
+    </div>
+    <div class="tbl-wrap">
+      <table><thead><tr>
+        <th>Material</th><th>Tipo</th><th>Unidade</th>
+        <th class="tr">Quantidade</th><th class="tr">Preço/Un.</th>
+        <th class="tr">Valor Total</th><th>Stock Mín.</th><th>Estado</th><th></th>
+      </tr></thead><tbody id="inv-tbody"></tbody></table>
+    </div>
+  </div>
+</div>
+
+<!-- CALCULADORA -->
+<div class="page" id="pg-calculadora">
+  <div class="page-hdr"><h2>🧮 Calculadora de Fabricação</h2><p>Calcula matérias-primas e custos por lote</p></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="box">
+      <h3>⚙️ Parâmetros</h3>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr">
+        <div class="fg"><label>Nome do Lote</label><input type="text" id="c-name" placeholder="ex: Lavanda — Maio" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Nº de Velas</label><input type="number" id="c-qty" value="100" min="1" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Peso por Vela (g)</label><input type="number" id="c-weight" value="200" min="1" oninput="calcUpdate()"></div>
+        <div class="fg"><label>% de Essência</label><input type="number" id="c-frag-pct" value="8" min="0" max="15" step="0.5" oninput="calcUpdate()"></div>
+      </div>
+      <hr class="hr">
+      <h3 style="margin-bottom:10px">💶 Custos Unitários</h3>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr">
+        <div class="fg"><label>Cera €/kg</label><input type="number" id="c-wax-price" value="4.50" step="0.01" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Essência €/kg</label><input type="number" id="c-frag-price" value="25.00" step="0.01" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Recipiente €/un</label><input type="number" id="c-container" value="1.20" step="0.01" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Pavio €/un</label><input type="number" id="c-wick" value="0.10" step="0.01" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Etiqueta €/un</label><input type="number" id="c-label" value="0.08" step="0.01" oninput="calcUpdate()"></div>
+        <div class="fg"><label>Outros Fixos €</label><input type="number" id="c-other" value="0" step="0.01" oninput="calcUpdate()"></div>
+      </div>
+      <div class="fg"><label>Margem de Lucro Desejada (%)</label><input type="number" id="c-margin" value="40" min="0" step="1" oninput="calcUpdate()"></div>
+      <div class="modal-ftr" style="margin-top:14px">
+        <button class="btn btn-ghost" onclick="calcReset()">Limpar</button>
+        <button class="btn btn-p" onclick="saveBatch()">💾 Guardar Lote</button>
+      </div>
+    </div>
+    <div>
+      <div class="calc-res"><h3>📋 Resultados</h3><div class="calc-grid" id="calc-grid"></div></div>
+      <div class="box" style="margin-top:14px">
+        <h3>📊 Distribuição de Custos</h3>
+        <div class="chart-wrap" style="height:180px"><canvas id="chart-calc-pie"></canvas></div>
+      </div>
+    </div>
+  </div>
+  <div class="box" style="margin-top:4px">
+    <h3>📁 Lotes Guardados</h3>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Nome</th><th>Data</th><th>Velas</th><th class="tr">Cera</th>
+      <th class="tr">Essência</th><th class="tr">Custo Total</th><th class="tr">Custo/Vela</th><th class="tr">PVP Sug.</th><th></th>
+    </tr></thead><tbody id="batch-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- RECEITAS -->
+<div class="page" id="pg-receitas">
+  <div class="page-hdr"><h2>🧪 Receitas de Velas</h2><p>Guarda as tuas fórmulas e combinações de fragrâncias</p></div>
+  <div class="box">
+    <div class="toolbar">
+      <div class="tl-left"><button class="btn btn-p" id="btn-add-rec">+ Nova Receita</button></div>
+    </div>
+    <div id="rec-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px"></div>
+  </div>
+</div>
+
+<!-- STOCK -->
+<div class="page" id="pg-stock">
+  <div class="page-hdr"><h2>🕯️ Stock de Velas</h2><p>Velas acabadas disponíveis para venda</p></div>
+  <div class="cards" id="stock-cards"></div>
+  <div class="box">
+    <div class="toolbar">
+      <div class="tl-left"><button class="btn btn-p" id="btn-add-stock">+ Adicionar Vela</button></div>
+      <div class="tl-right"><span class="muted" style="font-size:.78rem" id="stock-total-lbl"></span></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Nome</th><th>Essência</th><th>Tamanho</th>
+      <th class="tr">Stock</th><th class="tr">Custo</th><th class="tr">PVP</th>
+      <th class="tr">Valor Stock</th><th class="tr">Margem</th><th>Estado</th><th></th>
+    </tr></thead><tbody id="stock-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- VENDAS -->
+<div class="page" id="pg-vendas">
+  <div class="page-hdr"><h2>🛒 Vendas & Encomendas</h2><p>Regista e acompanha todas as encomendas</p></div>
+  <div class="cards" id="sales-cards"></div>
+  <div class="box">
+    <div class="toolbar">
+      <div class="tl-left">
+        <button class="btn btn-p" id="btn-add-order">+ Nova Encomenda</button>
+        <button class="flt active" data-status="todos" onclick="setOrderFilter('todos',this)">Todas</button>
+        <button class="flt" data-status="pendente" onclick="setOrderFilter('pendente',this)">Pendente</button>
+        <button class="flt" data-status="processando" onclick="setOrderFilter('processando',this)">A Processar</button>
+        <button class="flt" data-status="enviada" onclick="setOrderFilter('enviada',this)">Enviada</button>
+        <button class="flt" data-status="entregue" onclick="setOrderFilter('entregue',this)">Entregue</button>
+        <button class="flt" data-status="cancelada" onclick="setOrderFilter('cancelada',this)">Cancelada</button>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Data</th><th>Cliente</th><th>Produto</th>
+      <th class="tr">Qtd.</th><th class="tr">Preço/Un.</th><th class="tr">Total</th>
+      <th>Pagamento</th><th>Estado</th><th>Notas</th><th></th>
+    </tr></thead><tbody id="orders-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- GASTOS -->
+<div class="page" id="pg-gastos">
+  <div class="page-hdr"><h2>💸 Gastos & Despesas</h2><p>Todos os custos da empresa</p></div>
+  <div class="cards" id="exp-cards"></div>
+  <div class="box">
+    <div class="toolbar">
+      <div class="tl-left">
+        <button class="btn btn-p" id="btn-add-exp">+ Registar Despesa</button>
+        <button class="flt active" data-ecat="todos" onclick="setExpFilter('todos',this)">Todos</button>
+        <button class="flt" data-ecat="materias-primas" onclick="setExpFilter('materias-primas',this)">Mat. Primas</button>
+        <button class="flt" data-ecat="embalagem" onclick="setExpFilter('embalagem',this)">Embalagem</button>
+        <button class="flt" data-ecat="marketing" onclick="setExpFilter('marketing',this)">Marketing</button>
+        <button class="flt" data-ecat="transporte" onclick="setExpFilter('transporte',this)">Transporte</button>
+        <button class="flt" data-ecat="equipamento" onclick="setExpFilter('equipamento',this)">Equipamento</button>
+        <button class="flt" data-ecat="outro" onclick="setExpFilter('outro',this)">Outro</button>
+      </div>
+      <div class="tl-right">
+        <select id="exp-month-filter" onchange="renderExpenses()" style="padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:.8rem;background:var(--bg)">
+          <option value="">Todos os meses</option>
+        </select>
+      </div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Data</th><th>Descrição</th><th>Categoria</th><th class="tr">Valor (€)</th><th>Fornecedor</th><th></th>
+    </tr></thead><tbody id="exp-tbody"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ANÁLISES -->
+<div class="page" id="pg-analises">
+  <div class="page-hdr"><h2>📈 Análises & Relatórios</h2><p>Visão aprofundada do desempenho do negócio</p></div>
+  <div class="cards" id="anal-cards"></div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>📅 Receitas vs Despesas (6 meses)</h3><div class="chart-wrap"><canvas id="chart-rev-exp"></canvas></div></div>
+    <div class="chart-box"><h3>💰 Lucro Mensal</h3><div class="chart-wrap"><canvas id="chart-profit"></canvas></div></div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>🏆 Produtos Mais Vendidos</h3><div class="chart-wrap"><canvas id="chart-top-prod"></canvas></div></div>
+    <div class="chart-box"><h3>📦 Valor Inventário por Tipo</h3><div class="chart-wrap"><canvas id="chart-inv-type"></canvas></div></div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>🛒 Encomendas por Estado</h3><div class="chart-wrap" style="height:180px"><canvas id="chart-order-status"></canvas></div></div>
+    <div class="chart-box"><h3>💸 Despesas por Categoria</h3><div class="chart-wrap" style="height:180px"><canvas id="chart-exp-anal"></canvas></div></div>
+  </div>
+</div>
+
+<!-- DEFINIÇÕES -->
+<div class="page" id="pg-definicoes">
+  <div class="page-hdr"><h2>⚙️ Definições & Dados</h2><p>Backup, restauro e informações</p></div>
+  <div class="box">
+    <h3>💾 Backup de Dados</h3>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:12px">Os dados ficam no browser. Exporta regularmente para não os perder.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-p" onclick="exportData()">⬇️ Exportar Backup (JSON)</button>
+      <label class="btn btn-ghost" style="cursor:pointer">⬆️ Importar Backup<input type="file" accept=".json" style="display:none" onchange="importData(this)"></label>
+    </div>
+  </div>
+  <div class="box">
+    <h3>🗑️ Limpar Dados</h3>
+    <p style="font-size:.83rem;color:var(--muted);margin-bottom:12px">Acção irreversível!</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-del btn-sm" onclick="clearSection('inventory')">Inventário</button>
+      <button class="btn btn-del btn-sm" onclick="clearSection('orders')">Encomendas</button>
+      <button class="btn btn-del btn-sm" onclick="clearSection('stock')">Stock</button>
+      <button class="btn btn-del btn-sm" onclick="clearSection('expenses')">Despesas</button>
+      <button class="btn btn-del btn-sm" onclick="clearSection('batches')">Lotes</button>
+      <button class="btn btn-del btn-sm" onclick="clearSection('receitas')">Receitas</button>
+      <button class="btn btn-del" style="font-weight:700" onclick="clearAll()">🗑️ Limpar TUDO</button>
+    </div>
+  </div>
+  <div class="box">
+    <h3>ℹ️ GitHub Pages</h3>
+    <div class="alert alert-info">
+      1. Cria repositório no GitHub (ex: <code>velas-dashboard</code>)<br>
+      2. Faz upload do ficheiro <code>index.html</code><br>
+      3. Settings → Pages → Branch: main → Save<br>
+      4. Acede em <code>https://teu-utilizador.github.io/velas-dashboard</code><br><br>
+      ⚠️ Usa o backup JSON para transferir dados entre dispositivos.
+    </div>
+  </div>
+</div>
+
+</main>
+
+<!-- MODAL INVENTÁRIO -->
+<div class="overlay" id="inv-modal">
+  <div class="modal">
+    <div class="modal-hdr"><h3 id="inv-modal-title">Adicionar Material</h3><button class="modal-x" onclick="closeModal('inv-modal')">✕</button></div>
+    <input type="hidden" id="inv-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Nome *</label><input type="text" id="inv-name" placeholder="ex: Cera de Soja, Pavio de Algodão..."></div>
+      <div class="fg"><label>Tipo *</label>
+        <select id="inv-type">
+          <option value="cera">🕯️ Cera</option>
+          <option value="essencia">🌸 Essência / Fragância</option>
+          <option value="pavio">🔥 Pavio</option>
+          <option value="autocolante">🏷️ Autocolante / Etiqueta</option>
+          <option value="recipiente">🫙 Recipiente / Copo</option>
+          <option value="embalagem">📦 Embalagem</option>
+          <option value="cimento">🪨 Cimento</option>
+          <option value="gesso">⬜ Gesso</option>
+          <option value="areia">🟡 Areia</option>
+          <option value="molde">🔲 Molde</option>
+          <option value="corante">🎨 Corante</option>
+          <option value="aditivo">⚗️ Aditivo</option>
+          <option value="outro">📌 Outro</option>
+        </select>
+      </div>
+      <div class="fg"><label>Unidade *</label>
+        <select id="inv-unit">
+          <option value="kg">kg</option><option value="g">g</option>
+          <option value="L">L</option><option value="ml">ml</option>
+          <option value="un">unidade(s)</option><option value="cx">caixa(s)</option>
+          <option value="rolo">rolo(s)</option><option value="saco">saco(s)</option>
+        </select>
+      </div>
+      <div class="fg"><label>Quantidade *</label><input type="number" id="inv-qty" placeholder="0" min="0" step="0.001"></div>
+      <div class="fg"><label>Preço por Unidade (€) *</label><input type="number" id="inv-price" placeholder="0.00" min="0" step="0.01"></div>
+      <div class="fg"><label>Stock Mínimo</label><input type="number" id="inv-min" placeholder="0" min="0" step="0.001"></div>
+      <div class="fg"><label>Fornecedor</label><input type="text" id="inv-supplier" placeholder="Nome do fornecedor"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="inv-notes" placeholder="Observações..."></textarea></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeModal('inv-modal')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveInventory()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RECEITA -->
+<div class="overlay" id="rec-modal">
+  <div class="modal">
+    <div class="modal-hdr"><h3 id="rec-modal-title">Nova Receita</h3><button class="modal-x" onclick="closeModal('rec-modal')">✕</button></div>
+    <input type="hidden" id="rec-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Nome da Receita *</label><input type="text" id="rec-name" placeholder="ex: Vela Lavanda & Baunilha"></div>
+      <div class="fg"><label>Tipo de Cera</label><input type="text" id="rec-wax" placeholder="ex: Soja, Coco, Parafina"></div>
+      <div class="fg"><label>Peso da Vela (g)</label><input type="number" id="rec-weight" placeholder="200" min="0"></div>
+      <div class="fg"><label>% Essência</label><input type="number" id="rec-fragpct" placeholder="8" min="0" max="20" step="0.5"></div>
+      <div class="fg"><label>Temperatura de Adição (°C)</label><input type="number" id="rec-temp" placeholder="55" min="0"></div>
+      <div class="fg"><label>Tipo de Pavio</label><input type="text" id="rec-wick" placeholder="ex: CD 14, ECO 4"></div>
+      <div class="fg"><label>Recipiente</label><input type="text" id="rec-container" placeholder="ex: Copo Vidro 20cl"></div>
+      <div class="fg"><label>Tempo de Cura (horas)</label><input type="number" id="rec-cure" placeholder="48" min="0"></div>
+    </div>
+    <div class="fg" style="margin-bottom:10px"><label>Fragrâncias usadas</label><input type="text" id="rec-frags" placeholder="ex: Lavanda 6%, Baunilha 2%"></div>
+    <div class="fg" style="margin-bottom:10px"><label>Corante / Pigmento</label><input type="text" id="rec-color" placeholder="ex: Roxo — 2 gotas por 100g"></div>
+    <div class="fg" style="margin-bottom:10px">
+      <label>Avaliação</label>
+      <div class="rating-row" id="rec-stars-row">
+        <span data-v="1" onclick="setRating(1)">☆</span>
+        <span data-v="2" onclick="setRating(2)">☆</span>
+        <span data-v="3" onclick="setRating(3)">☆</span>
+        <span data-v="4" onclick="setRating(4)">☆</span>
+        <span data-v="5" onclick="setRating(5)">☆</span>
+      </div>
+      <input type="hidden" id="rec-rating" value="0">
+    </div>
+    <div class="fg"><label>Notas & Resultado</label><textarea id="rec-notes" placeholder="Como ficou a vela? Cheiro forte? Burn test ok?..."></textarea></div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeModal('rec-modal')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveReceita()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL STOCK -->
+<div class="overlay" id="stock-modal">
+  <div class="modal">
+    <div class="modal-hdr"><h3 id="stock-modal-title">Adicionar Vela</h3><button class="modal-x" onclick="closeModal('stock-modal')">✕</button></div>
+    <input type="hidden" id="stock-id">
+    <div class="form-grid">
+      <div class="fg" style="grid-column:1/-1"><label>Nome *</label><input type="text" id="stock-name" placeholder="ex: Vela Lavanda 200g"></div>
+      <div class="fg"><label>Essência/Aroma</label><input type="text" id="stock-frag" placeholder="ex: Lavanda"></div>
+      <div class="fg"><label>Tamanho / Volume</label><input type="text" id="stock-size" placeholder="ex: 200g / 20cl"></div>
+      <div class="fg"><label>Quantidade *</label><input type="number" id="stock-qty" placeholder="0" min="0"></div>
+      <div class="fg"><label>Preço de Custo (€)</label><input type="number" id="stock-cost" placeholder="0.00" step="0.01"></div>
+      <div class="fg"><label>PVP (€)</label><input type="number" id="stock-pvp" placeholder="0.00" step="0.01"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="stock-notes" placeholder="Lote, observações..."></textarea></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeModal('stock-modal')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveStock()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ENCOMENDA -->
+<div class="overlay" id="order-modal">
+  <div class="modal">
+    <div class="modal-hdr"><h3 id="order-modal-title">Nova Encomenda</h3><button class="modal-x" onclick="closeModal('order-modal')">✕</button></div>
+    <input type="hidden" id="order-id">
+    <div class="form-grid">
+      <div class="fg"><label>Data *</label><input type="date" id="order-date"></div>
+      <div class="fg"><label>Cliente *</label><input type="text" id="order-client" placeholder="Nome do cliente"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Produto *</label><input type="text" id="order-product" placeholder="ex: Vela Lavanda 200g"></div>
+      <div class="fg"><label>Quantidade *</label><input type="number" id="order-qty" placeholder="1" min="1"></div>
+      <div class="fg"><label>Preço/Un. (€) *</label><input type="number" id="order-price" placeholder="0.00" step="0.01"></div>
+      <div class="fg"><label>Estado</label>
+        <select id="order-status">
+          <option value="pendente">Pendente</option><option value="processando">A Processar</option>
+          <option value="enviada">Enviada</option><option value="entregue">Entregue</option><option value="cancelada">Cancelada</option>
+        </select>
+      </div>
+      <div class="fg"><label>Pagamento</label>
+        <select id="order-pay">
+          <option value="">—</option><option value="multibanco">Multibanco</option>
+          <option value="mbway">MB Way</option><option value="transferencia">Transferência</option>
+          <option value="numerario">Numerário</option><option value="paypal">PayPal</option>
+        </select>
+      </div>
+      <div class="fg" style="grid-column:1/-1"><label>Notas / Morada</label><textarea id="order-notes" placeholder="Morada, observações..."></textarea></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeModal('order-modal')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveOrder()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DESPESA -->
+<div class="overlay" id="exp-modal">
+  <div class="modal">
+    <div class="modal-hdr"><h3 id="exp-modal-title">Registar Despesa</h3><button class="modal-x" onclick="closeModal('exp-modal')">✕</button></div>
+    <input type="hidden" id="exp-id">
+    <div class="form-grid">
+      <div class="fg"><label>Data *</label><input type="date" id="exp-date"></div>
+      <div class="fg"><label>Categoria *</label>
+        <select id="exp-cat">
+          <option value="materias-primas">Matérias-Primas</option><option value="embalagem">Embalagem</option>
+          <option value="marketing">Marketing</option><option value="transporte">Transporte</option>
+          <option value="equipamento">Equipamento</option><option value="outro">Outro</option>
+        </select>
+      </div>
+      <div class="fg" style="grid-column:1/-1"><label>Descrição *</label><input type="text" id="exp-desc" placeholder="ex: Compra cera de soja 10kg"></div>
+      <div class="fg"><label>Valor (€) *</label><input type="number" id="exp-amount" placeholder="0.00" step="0.01"></div>
+      <div class="fg"><label>Fornecedor</label><input type="text" id="exp-vendor" placeholder="ex: Amazon"></div>
+      <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="exp-notes" placeholder="Notas..."></textarea></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-ghost" onclick="closeModal('exp-modal')">Cancelar</button>
+      <button class="btn btn-p" onclick="saveExpense()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── DATA ──────────────────────────────────────────────────
+const DB={
+  get(k){try{return JSON.parse(localStorage.getItem('velas_'+k)||'[]')}catch{return[]}},
+  set(k,v){localStorage.setItem('velas_'+k,JSON.stringify(v))},
+  id(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+}
+const $=id=>document.getElementById(id)
+const eur=n=>'€'+Number(n||0).toFixed(2).replace('.',',')
+const num=n=>Number(n||0)
+const today=()=>new Date().toISOString().slice(0,10)
+const fmtDate=d=>d?new Date(d+'T12:00:00').toLocaleDateString('pt-PT'):'—'
+function fmt(n,d=2){return Number(n||0).toLocaleString('pt-PT',{minimumFractionDigits:d,maximumFractionDigits:d})}
+
+// Chart registry
+const CHARTS={}
+function makeChart(id,cfg){
+  if(CHARTS[id]) CHARTS[id].destroy()
+  const el=$(id); if(!el) return
+  CHARTS[id]=new Chart(el,cfg)
+}
+
+// Palette
+const PAL=['#c8792a','#5a8fd4','#4a9e6b','#e8a030','#e05252','#9b59b6','#1abc9c','#e67e22','#3498db','#e91e63']
+
+// Type definitions
+const TYPES={
+  cera:{l:'Cera',i:'🕯️'},essencia:{l:'Essência',i:'🌸'},pavio:{l:'Pavio',i:'🔥'},
+  autocolante:{l:'Autocolante',i:'🏷️'},recipiente:{l:'Recipiente',i:'🫙'},
+  embalagem:{l:'Embalagem',i:'📦'},cimento:{l:'Cimento',i:'🪨'},
+  gesso:{l:'Gesso',i:'⬜'},areia:{l:'Areia',i:'🟡'},molde:{l:'Molde',i:'🔲'},
+  corante:{l:'Corante',i:'🎨'},aditivo:{l:'Aditivo',i:'⚗️'},outro:{l:'Outro',i:'📌'}
+}
+function typeLabel(t){const x=TYPES[t]; return x?x.i+' '+x.l:t}
+
+const CAT_LABELS={'materias-primas':'Mat. Primas','embalagem':'Embalagem','marketing':'Marketing','transporte':'Transporte','equipamento':'Equipamento','outro':'Outro'}
+const CAT_COLORS={'materias-primas':'#c8792a','embalagem':'#5a8fd4','marketing':'#e05252','transporte':'#e8a030','equipamento':'#4a9e6b','outro':'#9b59b6'}
+
+// Months helpers
+function last6Months(){const m=[];for(let i=5;i>=0;i--){const d=new Date();d.setMonth(d.getMonth()-i);m.push(d.toISOString().slice(0,7))}return m}
+function monthLabel(ym){const[y,m]=ym.split('-');const n=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];return n[+m-1]+' '+y.slice(2)}
+
+// ── NAV ──────────────────────────────────────────────────
+let currentPage='dashboard'
+document.querySelectorAll('.nav-item').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const pg=el.dataset.page
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'))
+    document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'))
+    el.classList.add('active')
+    $('pg-'+pg).classList.add('active')
+    currentPage=pg
+    renderPage(pg)
+  })
+})
+function renderPage(pg){
+  const fn={dashboard:renderDashboard,inventario:renderInventory,calculadora:()=>{renderBatches();calcUpdate()},
+    receitas:renderReceitas,stock:()=>{renderStockCards();renderStock()},
+    vendas:()=>{renderSalesCards();renderOrders()},gastos:()=>{renderExpCards();renderExpenses()},
+    analises:renderAnalises}
+  if(fn[pg]) fn[pg]()
+}
+function closeModal(id){$(id).classList.remove('open')}
+function openModal(id){$(id).classList.add('open')}
+document.querySelectorAll('.overlay').forEach(el=>el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open')}))
+
+// ── DASHBOARD ─────────────────────────────────────────────
+function renderDashboard(){
+  const now=new Date()
+  $('dash-date').textContent=now.toLocaleDateString('pt-PT',{weekday:'long',year:'numeric',month:'long',day:'numeric'})
+  const inv=DB.get('inventory'),orders=DB.get('orders'),stock=DB.get('stock'),exp=DB.get('expenses')
+  const invVal=inv.reduce((s,i)=>s+num(i.qty)*num(i.price),0)
+  const activeOrders=orders.filter(o=>o.status!=='cancelada')
+  const totalSales=activeOrders.reduce((s,o)=>s+num(o.qty)*num(o.price),0)
+  const thisM=today().slice(0,7)
+  const monthSales=activeOrders.filter(o=>o.date?.slice(0,7)===thisM).reduce((s,o)=>s+num(o.qty)*num(o.price),0)
+  const monthExp=exp.filter(e=>e.date?.slice(0,7)===thisM).reduce((s,e)=>s+num(e.amount),0)
+  const pending=orders.filter(o=>o.status==='pendente').length
+  const totalExp=exp.reduce((s,e)=>s+num(e.amount),0)
+  const profit=totalSales-totalExp
+  $('dash-cards').innerHTML=`
+    <div class="card accent"><div class="card-lbl">Vendas Totais</div><div class="card-val">${eur(totalSales)}</div><div class="card-sub">${activeOrders.length} encomendas</div></div>
+    <div class="card"><div class="card-lbl">Vendas Este Mês</div><div class="card-val">${eur(monthSales)}</div><div class="card-sub">${activeOrders.filter(o=>o.date?.slice(0,7)===thisM).length} enc.</div></div>
+    <div class="card ${profit>=0?'ok':'err'}"><div class="card-lbl">Lucro Estimado</div><div class="card-val">${eur(profit)}</div><div class="card-sub">Vendas − Despesas</div></div>
+    <div class="card"><div class="card-lbl">Inventário</div><div class="card-val">${eur(invVal)}</div><div class="card-sub">${inv.length} materiais</div></div>
+    <div class="card"><div class="card-lbl">Pendentes</div><div class="card-val">${pending}</div><div class="card-sub">Por processar</div></div>
+    <div class="card"><div class="card-lbl">Gastos Este Mês</div><div class="card-val" style="color:var(--err)">${eur(monthExp)}</div><div class="card-sub">${exp.filter(e=>e.date?.slice(0,7)===thisM).length} despesas</div></div>
+  `
+  // Chart: sales last 6 months
+  const months=last6Months()
+  const salesData=months.map(m=>activeOrders.filter(o=>o.date?.slice(0,7)===m).reduce((s,o)=>s+num(o.qty)*num(o.price),0))
+  const expData=months.map(m=>exp.filter(e=>e.date?.slice(0,7)===m).reduce((s,e)=>s+num(e.amount),0))
+  makeChart('chart-sales',{type:'bar',data:{labels:months.map(monthLabel),datasets:[
+    {label:'Vendas',data:salesData,backgroundColor:'rgba(200,121,42,.7)',borderColor:'#c8792a',borderWidth:2,borderRadius:6},
+    {label:'Despesas',data:expData,backgroundColor:'rgba(224,82,82,.4)',borderColor:'#e05252',borderWidth:2,borderRadius:6}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{size:11}}}},scales:{y:{ticks:{callback:v=>'€'+v.toFixed(0)}}}}})
+  // Chart: expenses by category donut
+  const byCat={}
+  exp.forEach(e=>{byCat[e.cat]=(byCat[e.cat]||0)+num(e.amount)})
+  const catKeys=Object.keys(byCat)
+  makeChart('chart-exp-cat',{type:'doughnut',data:{labels:catKeys.map(c=>CAT_LABELS[c]||c),datasets:[{data:catKeys.map(c=>byCat[c]),backgroundColor:catKeys.map(c=>CAT_COLORS[c]||'#ccc'),borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}})
+  // Recent orders
+  const rec=[...orders].sort((a,b)=>b.date>a.date?1:-1).slice(0,5)
+  $('dash-orders').innerHTML=rec.length?rec.map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+    <div><div style="font-size:.83rem;font-weight:600">${o.client}</div><div style="font-size:.72rem;color:var(--muted)">${o.product} · ${fmtDate(o.date)}</div></div>
+    <div style="text-align:right"><div style="font-size:.83rem;font-weight:700">${eur(num(o.qty)*num(o.price))}</div>${statusBadge(o.status)}</div>
+  </div>`).join(''):'<div class="empty"><div class="empty-ico">🛒</div><p>Sem encomendas</p></div>'
+  // Low stock
+  const low=inv.filter(i=>num(i.min)>0&&num(i.qty)<=num(i.min))
+  const stockZero=stock.filter(s=>num(s.qty)===0)
+  $('dash-lowstock').innerHTML=(low.length||stockZero.length)?[
+    ...low.map(i=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:.83rem">${typeLabel(i.type)} ${i.name}</span><span class="badge b-red">Baixo: ${fmt(i.qty,2)} ${i.unit}</span></div>`),
+    ...stockZero.map(s=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:.83rem">🕯️ ${s.name}</span><span class="badge b-red">Esgotado</span></div>`)
+  ].join(''):'<div class="empty"><div class="empty-ico">✅</div><p>Stock OK</p></div>'
+}
+
+// ── INVENTORY ─────────────────────────────────────────────
+function renderInventory(){
+  // populate type filter
+  const sel=$('inv-type-filter'), curVal=sel.value
+  sel.innerHTML='<option value="">Todos os tipos</option>'+Object.entries(TYPES).map(([k,v])=>`<option value="${k}" ${k===curVal?'selected':''}>${v.i} ${v.l}</option>`).join('')
+
+  const items=DB.get('inventory')
+  const fType=sel.value
+  const filtered=fType?items.filter(i=>i.type===fType):items
+  const totalVal=items.reduce((s,i)=>s+num(i.qty)*num(i.price),0)
+  $('inv-total-lbl').textContent=`Valor total: ${eur(totalVal)}`
+  if(!filtered.length){$('inv-tbody').innerHTML=`<tr><td colspan="9"><div class="empty"><div class="empty-ico">📦</div><p>Sem materiais</p></div></td></tr>`;return}
+  $('inv-tbody').innerHTML=filtered.map(i=>{
+    const total=num(i.qty)*num(i.price)
+    const low=num(i.min)>0&&num(i.qty)<=num(i.min)
+    return`<tr>
+      <td><div class="bold">${i.name}</div>${i.supplier?`<div class="muted" style="font-size:.72rem">${i.supplier}</div>`:''}</td>
+      <td>${typeLabel(i.type)}</td><td>${i.unit}</td>
+      <td class="tr bold ${low?'':''}"><span style="${low?'color:var(--err)':''}">${fmt(i.qty,3)}</span></td>
+      <td class="tr">${eur(i.price)}</td>
+      <td class="tr bold">${eur(total)}</td>
+      <td class="tc">${i.min>0?fmt(i.min,3):'—'}</td>
+      <td>${low?'<span class="badge b-red">⚠️ Baixo</span>':'<span class="badge b-green">OK</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ed btn-sm" onclick="editInventory('${i.id}')">✏️</button>
+        <button class="btn btn-del btn-sm" onclick="delItem('inventory','${i.id}',renderInventory)">🗑️</button>
+      </td>
+    </tr>`
+  }).join('')
+}
+
+$('btn-add-inv').onclick=()=>{
+  $('inv-modal-title').textContent='Adicionar Material'
+  $('inv-id').value='';$('inv-name').value='';$('inv-type').value='cera';$('inv-unit').value='kg'
+  $('inv-qty').value='';$('inv-price').value='';$('inv-min').value='';$('inv-supplier').value='';$('inv-notes').value=''
+  openModal('inv-modal')
+}
+function editInventory(id){
+  const i=DB.get('inventory').find(x=>x.id===id);if(!i)return
+  $('inv-modal-title').textContent='Editar Material'
+  $('inv-id').value=i.id;$('inv-name').value=i.name;$('inv-type').value=i.type;$('inv-unit').value=i.unit
+  $('inv-qty').value=i.qty;$('inv-price').value=i.price;$('inv-min').value=i.min||'';$('inv-supplier').value=i.supplier||'';$('inv-notes').value=i.notes||''
+  openModal('inv-modal')
+}
+function saveInventory(){
+  const name=$('inv-name').value.trim();if(!name){alert('Nome obrigatório');return}
+  const items=DB.get('inventory'),id=$('inv-id').value
+  const obj={id:id||DB.id(),name,type:$('inv-type').value,unit:$('inv-unit').value,qty:num($('inv-qty').value),price:num($('inv-price').value),min:num($('inv-min').value),supplier:$('inv-supplier').value.trim(),notes:$('inv-notes').value.trim()}
+  if(id){const idx=items.findIndex(x=>x.id===id);items[idx]=obj}else items.push(obj)
+  DB.set('inventory',items);closeModal('inv-modal');renderInventory()
+}
+
+// ── RECEITAS ──────────────────────────────────────────────
+let recRating=0
+function setRating(v){
+  recRating=v;$('rec-rating').value=v
+  document.querySelectorAll('#rec-stars-row span').forEach((s,i)=>{s.textContent=i<v?'★':'☆';s.style.color=i<v?'var(--warn)':'var(--muted)'})
+}
+$('btn-add-rec').onclick=()=>{
+  $('rec-modal-title').textContent='Nova Receita'
+  $('rec-id').value='';$('rec-name').value='';$('rec-wax').value='';$('rec-weight').value='';
+  $('rec-fragpct').value='';$('rec-temp').value='';$('rec-wick').value='';$('rec-container').value='';
+  $('rec-cure').value='';$('rec-frags').value='';$('rec-color').value='';$('rec-notes').value='';
+  recRating=0;$('rec-rating').value=0;setRating(0)
+  openModal('rec-modal')
+}
+function editReceita(id){
+  const r=DB.get('receitas').find(x=>x.id===id);if(!r)return
+  $('rec-modal-title').textContent='Editar Receita'
+  $('rec-id').value=r.id;$('rec-name').value=r.name;$('rec-wax').value=r.wax||'';$('rec-weight').value=r.weight||'';
+  $('rec-fragpct').value=r.fragpct||'';$('rec-temp').value=r.temp||'';$('rec-wick').value=r.wick||'';
+  $('rec-container').value=r.container||'';$('rec-cure').value=r.cure||'';$('rec-frags').value=r.frags||'';
+  $('rec-color').value=r.color||'';$('rec-notes').value=r.notes||'';setRating(r.rating||0)
+  openModal('rec-modal')
+}
+function saveReceita(){
+  const name=$('rec-name').value.trim();if(!name){alert('Nome obrigatório');return}
+  const items=DB.get('receitas'),id=$('rec-id').value
+  const obj={id:id||DB.id(),name,wax:$('rec-wax').value.trim(),weight:num($('rec-weight').value),fragpct:num($('rec-fragpct').value),temp:num($('rec-temp').value),wick:$('rec-wick').value.trim(),container:$('rec-container').value.trim(),cure:num($('rec-cure').value),frags:$('rec-frags').value.trim(),color:$('rec-color').value.trim(),notes:$('rec-notes').value.trim(),rating:num($('rec-rating').value),date:id?DB.get('receitas').find(x=>x.id===id)?.date:today()}
+  if(id){const idx=items.findIndex(x=>x.id===id);items[idx]=obj}else items.push(obj)
+  DB.set('receitas',items);closeModal('rec-modal');renderReceitas()
+}
+function renderReceitas(){
+  const items=DB.get('receitas')
+  if(!items.length){$('rec-grid').innerHTML=`<div class="empty" style="grid-column:1/-1"><div class="empty-ico">🧪</div><p>Sem receitas guardadas.<br>Adiciona a tua primeira fórmula!</p></div>`;return}
+  $('rec-grid').innerHTML=items.map(r=>`
+    <div class="box" style="margin:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div style="font-weight:700;font-size:.92rem">${r.name}</div>
+        <div style="color:var(--warn);font-size:.9rem">${'★'.repeat(r.rating||0)}${'☆'.repeat(5-(r.rating||0))}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+        ${r.wax?`<span class="rec-tag">🕯️ ${r.wax}</span>`:''}
+        ${r.weight?`<span class="rec-tag">⚖️ ${r.weight}g</span>`:''}
+        ${r.fragpct?`<span class="rec-tag">🌸 ${r.fragpct}%</span>`:''}
+        ${r.temp?`<span class="rec-tag">🌡️ ${r.temp}°C</span>`:''}
+        ${r.wick?`<span class="rec-tag">🔥 ${r.wick}</span>`:''}
+        ${r.container?`<span class="rec-tag">🫙 ${r.container}</span>`:''}
+        ${r.cure?`<span class="rec-tag">⏱️ ${r.cure}h cura</span>`:''}
+      </div>
+      ${r.frags?`<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">🌺 ${r.frags}</div>`:''}
+      ${r.color?`<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">🎨 ${r.color}</div>`:''}
+      ${r.notes?`<div style="font-size:.78rem;background:var(--bg2);padding:6px 8px;border-radius:6px;margin-top:6px">${r.notes}</div>`:''}
+      <div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end">
+        <button class="btn btn-ed btn-sm" onclick="editReceita('${r.id}')">✏️ Editar</button>
+        <button class="btn btn-del btn-sm" onclick="delItem('receitas','${r.id}',renderReceitas)">🗑️</button>
+      </div>
+    </div>`).join('')
+}
+
+// ── STOCK ─────────────────────────────────────────────────
+function renderStockCards(){
+  const stock=DB.get('stock')
+  const totalPvp=stock.reduce((s,i)=>s+num(i.qty)*num(i.pvp),0)
+  const totalCost=stock.reduce((s,i)=>s+num(i.qty)*num(i.cost),0)
+  const totalQty=stock.reduce((s,i)=>s+num(i.qty),0)
+  $('stock-cards').innerHTML=`
+    <div class="card accent"><div class="card-lbl">Valor PVP</div><div class="card-val">${eur(totalPvp)}</div><div class="card-sub">${totalQty} velas</div></div>
+    <div class="card"><div class="card-lbl">Valor Custo</div><div class="card-val">${eur(totalCost)}</div><div class="card-sub">Custo produção</div></div>
+    <div class="card ok"><div class="card-lbl">Margem Potencial</div><div class="card-val">${eur(totalPvp-totalCost)}</div><div class="card-sub">PVP − Custo</div></div>
+    <div class="card"><div class="card-lbl">Esgotados</div><div class="card-val">${stock.filter(s=>num(s.qty)===0).length}</div><div class="card-sub">Referências</div></div>
+  `
+}
+function renderStock(){
+  const items=DB.get('stock')
+  if(!items.length){$('stock-tbody').innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-ico">🕯️</div><p>Sem velas em stock</p></div></td></tr>`;return}
+  const totalVal=items.reduce((s,i)=>s+num(i.qty)*num(i.pvp),0)
+  $('stock-total-lbl').textContent=`Valor total PVP: ${eur(totalVal)}`
+  $('stock-tbody').innerHTML=items.map(i=>{
+    const mar=num(i.cost)>0?(num(i.pvp)-num(i.cost))/num(i.cost)*100:null
+    const zero=num(i.qty)===0
+    return`<tr>
+      <td class="bold">${i.name}</td><td>${i.frag||'—'}</td><td>${i.size||'—'}</td>
+      <td class="tr bold" style="${zero?'color:var(--err)':''}">${num(i.qty)}</td>
+      <td class="tr">${i.cost?eur(i.cost):'—'}</td>
+      <td class="tr bold">${i.pvp?eur(i.pvp):'—'}</td>
+      <td class="tr">${eur(num(i.qty)*num(i.pvp))}</td>
+      <td class="tr">${mar!==null?`<span class="badge ${mar>=30?'b-green':mar>=15?'b-yellow':'b-red'}">${fmt(mar,0)}%</span>`:'—'}</td>
+      <td>${zero?'<span class="badge b-red">Esgotado</span>':num(i.qty)<5?'<span class="badge b-yellow">Baixo</span>':'<span class="badge b-green">OK</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ed btn-sm" onclick="editStock('${i.id}')">✏️</button>
+        <button class="btn btn-del btn-sm" onclick="delItem('stock','${i.id}',()=>{renderStockCards();renderStock()})">🗑️</button>
+      </td>
+    </tr>`
+  }).join('')
+}
+$('btn-add-stock').onclick=()=>{
+  $('stock-modal-title').textContent='Adicionar Vela'
+  ['stock-id','stock-name','stock-frag','stock-size','stock-qty','stock-cost','stock-pvp','stock-notes'].forEach(id=>$(id).value='')
+  openModal('stock-modal')
+}
+function editStock(id){
+  const i=DB.get('stock').find(x=>x.id===id);if(!i)return
+  $('stock-modal-title').textContent='Editar Vela'
+  $('stock-id').value=i.id;$('stock-name').value=i.name;$('stock-frag').value=i.frag||'';$('stock-size').value=i.size||''
+  $('stock-qty').value=i.qty;$('stock-cost').value=i.cost||'';$('stock-pvp').value=i.pvp||'';$('stock-notes').value=i.notes||''
+  openModal('stock-modal')
+}
+function saveStock(){
+  const name=$('stock-name').value.trim();if(!name){alert('Nome obrigatório');return}
+  const items=DB.get('stock'),id=$('stock-id').value
+  const obj={id:id||DB.id(),name,frag:$('stock-frag').value.trim(),size:$('stock-size').value.trim(),qty:num($('stock-qty').value),cost:num($('stock-cost').value),pvp:num($('stock-pvp').value),notes:$('stock-notes').value.trim()}
+  if(id){const idx=items.findIndex(x=>x.id===id);items[idx]=obj}else items.push(obj)
+  DB.set('stock',items);closeModal('stock-modal');renderStockCards();renderStock()
+}
+
+// ── ORDERS ────────────────────────────────────────────────
+let orderFilter='todos'
+function setOrderFilter(s,el){orderFilter=s;document.querySelectorAll('#pg-vendas .flt').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderOrders()}
+function renderSalesCards(){
+  const orders=DB.get('orders'),active=orders.filter(o=>o.status!=='cancelada')
+  const totalRev=active.reduce((s,o)=>s+num(o.qty)*num(o.price),0)
+  const thisM=today().slice(0,7)
+  const monthRev=active.filter(o=>o.date?.slice(0,7)===thisM).reduce((s,o)=>s+num(o.qty)*num(o.price),0)
+  $('sales-cards').innerHTML=`
+    <div class="card accent"><div class="card-lbl">Total Vendas</div><div class="card-val">${eur(totalRev)}</div><div class="card-sub">${active.length} encomendas</div></div>
+    <div class="card"><div class="card-lbl">Este Mês</div><div class="card-val">${eur(monthRev)}</div><div class="card-sub">${active.filter(o=>o.date?.slice(0,7)===thisM).length} enc.</div></div>
+    <div class="card"><div class="card-lbl">Pendentes</div><div class="card-val">${orders.filter(o=>o.status==='pendente').length}</div><div class="card-sub">Por processar</div></div>
+    <div class="card ok"><div class="card-lbl">Entregues</div><div class="card-val">${orders.filter(o=>o.status==='entregue').length}</div><div class="card-sub">Concluídas</div></div>
+  `
+}
+function renderOrders(){
+  const orders=DB.get('orders')
+  const filtered=orderFilter==='todos'?orders:orders.filter(o=>o.status===orderFilter)
+  const sorted=[...filtered].sort((a,b)=>b.date>a.date?1:-1)
+  if(!sorted.length){$('orders-tbody').innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-ico">🛒</div><p>Sem encomendas</p></div></td></tr>`;return}
+  $('orders-tbody').innerHTML=sorted.map(o=>`<tr>
+    <td>${fmtDate(o.date)}</td><td class="bold">${o.client}</td><td>${o.product}</td>
+    <td class="tc">${o.qty}</td><td class="tr">${eur(o.price)}</td>
+    <td class="tr bold">${eur(num(o.qty)*num(o.price))}</td>
+    <td>${o.pay?`<span class="badge b-gray">${o.pay}</span>`:'—'}</td>
+    <td>${statusBadge(o.status)}</td>
+    <td class="muted" style="font-size:.75rem;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.notes||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-ed btn-sm" onclick="editOrder('${o.id}')">✏️</button>
+      <button class="btn btn-del btn-sm" onclick="delItem('orders','${o.id}',()=>{renderSalesCards();renderOrders()})">🗑️</button>
+    </td>
+  </tr>`).join('')
+}
+function statusBadge(s){
+  const m={pendente:'b-yellow',processando:'b-blue',enviada:'b-orange',entregue:'b-green',cancelada:'b-red'}
+  const l={pendente:'Pendente',processando:'A Processar',enviada:'Enviada',entregue:'Entregue',cancelada:'Cancelada'}
+  return`<span class="badge ${m[s]||'b-gray'}">${l[s]||s}</span>`
+}
+$('btn-add-order').onclick=()=>{
+  $('order-modal-title').textContent='Nova Encomenda';$('order-id').value='';$('order-date').value=today()
+  $('order-client').value='';$('order-product').value='';$('order-qty').value=1;$('order-price').value=''
+  $('order-status').value='pendente';$('order-pay').value='';$('order-notes').value=''
+  openModal('order-modal')
+}
+function editOrder(id){
+  const o=DB.get('orders').find(x=>x.id===id);if(!o)return
+  $('order-modal-title').textContent='Editar Encomenda';$('order-id').value=o.id;$('order-date').value=o.date
+  $('order-client').value=o.client;$('order-product').value=o.product;$('order-qty').value=o.qty
+  $('order-price').value=o.price;$('order-status').value=o.status;$('order-pay').value=o.pay||'';$('order-notes').value=o.notes||''
+  openModal('order-modal')
+}
+function saveOrder(){
+  const client=$('order-client').value.trim(),product=$('order-product').value.trim()
+  if(!client||!product){alert('Cliente e Produto obrigatórios');return}
+  const orders=DB.get('orders'),id=$('order-id').value
+  const obj={id:id||DB.id(),date:$('order-date').value,client,product,qty:num($('order-qty').value),price:num($('order-price').value),status:$('order-status').value,pay:$('order-pay').value,notes:$('order-notes').value.trim()}
+  if(id){const idx=orders.findIndex(x=>x.id===id);orders[idx]=obj}else orders.push(obj)
+  DB.set('orders',orders);closeModal('order-modal');renderSalesCards();renderOrders()
+}
+
+// ── EXPENSES ──────────────────────────────────────────────
+let expFilter='todos'
+function setExpFilter(cat,el){expFilter=cat;document.querySelectorAll('#pg-gastos .flt').forEach(x=>x.classList.remove('active'));el.classList.add('active');renderExpenses()}
+function renderExpCards(){
+  const exp=DB.get('expenses')
+  const total=exp.reduce((s,e)=>s+num(e.amount),0)
+  const thisM=exp.filter(e=>e.date?.slice(0,7)===today().slice(0,7))
+  const monthTotal=thisM.reduce((s,e)=>s+num(e.amount),0)
+  const byCat={};exp.forEach(e=>{byCat[e.cat]=(byCat[e.cat]||0)+num(e.amount)})
+  const top=Object.entries(byCat).sort((a,b)=>b[1]-a[1])[0]
+  $('exp-cards').innerHTML=`
+    <div class="card err"><div class="card-lbl">Total Despesas</div><div class="card-val">${eur(total)}</div><div class="card-sub">${exp.length} registos</div></div>
+    <div class="card"><div class="card-lbl">Este Mês</div><div class="card-val">${eur(monthTotal)}</div><div class="card-sub">${thisM.length} despesas</div></div>
+    ${top?`<div class="card"><div class="card-lbl">Maior Categoria</div><div class="card-val" style="font-size:1rem;margin-top:8px">${CAT_LABELS[top[0]]||top[0]}</div><div class="card-sub">${eur(top[1])}</div></div>`:''}
+  `
+}
+function renderExpenses(){
+  const all=DB.get('expenses')
+  const monthSel=$('exp-month-filter').value
+  const months=[...new Set(all.map(e=>e.date?.slice(0,7)).filter(Boolean))].sort().reverse()
+  $('exp-month-filter').innerHTML='<option value="">Todos os meses</option>'+months.map(m=>`<option value="${m}" ${m===monthSel?'selected':''}>${m}</option>`).join('')
+  let filtered=expFilter==='todos'?all:all.filter(e=>e.cat===expFilter)
+  if(monthSel) filtered=filtered.filter(e=>e.date?.slice(0,7)===monthSel)
+  const sorted=[...filtered].sort((a,b)=>b.date>a.date?1:-1)
+  const total=sorted.reduce((s,e)=>s+num(e.amount),0)
+  if(!sorted.length){$('exp-tbody').innerHTML=`<tr><td colspan="6"><div class="empty"><div class="empty-ico">💸</div><p>Sem despesas</p></div></td></tr>`;return}
+  $('exp-tbody').innerHTML=sorted.map(e=>`<tr>
+    <td>${fmtDate(e.date)}</td><td class="bold">${e.desc}</td>
+    <td><span class="badge" style="background:${CAT_COLORS[e.cat]||'#ccc'}22;color:${CAT_COLORS[e.cat]||'#555'}">${CAT_LABELS[e.cat]||e.cat}</span></td>
+    <td class="tr bold" style="color:var(--err)">${eur(e.amount)}</td>
+    <td class="muted" style="font-size:.75rem">${e.vendor||'—'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-ed btn-sm" onclick="editExpense('${e.id}')">✏️</button>
+      <button class="btn btn-del btn-sm" onclick="delItem('expenses','${e.id}',()=>{renderExpCards();renderExpenses()})">🗑️</button>
+    </td>
+  </tr>`).join('')+`<tr style="background:var(--bg2)"><td colspan="3" class="tr bold">Total filtrado:</td><td class="tr bold" style="color:var(--err)">${eur(total)}</td><td colspan="2"></td></tr>`
+}
+$('btn-add-exp').onclick=()=>{
+  $('exp-modal-title').textContent='Registar Despesa';$('exp-id').value='';$('exp-date').value=today()
+  $('exp-cat').value='materias-primas';$('exp-desc').value='';$('exp-amount').value='';$('exp-vendor').value='';$('exp-notes').value=''
+  openModal('exp-modal')
+}
+function editExpense(id){
+  const e=DB.get('expenses').find(x=>x.id===id);if(!e)return
+  $('exp-modal-title').textContent='Editar Despesa';$('exp-id').value=e.id;$('exp-date').value=e.date
+  $('exp-cat').value=e.cat;$('exp-desc').value=e.desc;$('exp-amount').value=e.amount;$('exp-vendor').value=e.vendor||'';$('exp-notes').value=e.notes||''
+  openModal('exp-modal')
+}
+function saveExpense(){
+  const desc=$('exp-desc').value.trim();if(!desc){alert('Descrição obrigatória');return}
+  const expenses=DB.get('expenses'),id=$('exp-id').value
+  const obj={id:id||DB.id(),date:$('exp-date').value,cat:$('exp-cat').value,desc,amount:num($('exp-amount').value),vendor:$('exp-vendor').value.trim(),notes:$('exp-notes').value.trim()}
+  if(id){const idx=expenses.findIndex(x=>x.id===id);expenses[idx]=obj}else expenses.push(obj)
+  DB.set('expenses',expenses);closeModal('exp-modal');renderExpCards();renderExpenses()
+}
+
+// ── CALCULATOR ────────────────────────────────────────────
+function calcUpdate(){
+  const qty=num($('c-qty').value),weight=num($('c-weight').value),fp=num($('c-frag-pct').value)
+  const wp=num($('c-wax-price').value),frp=num($('c-frag-price').value)
+  const cont=num($('c-container').value),wick=num($('c-wick').value)
+  const lbl=num($('c-label').value),other=num($('c-other').value),margin=num($('c-margin').value)
+  const totalFill=qty*weight,fragG=totalFill*(fp/100),waxG=totalFill-fragG
+  const waxKg=waxG/1000,fragKg=fragG/1000
+  const waxCost=waxKg*wp,fragCost=fragKg*frp
+  const contCost=qty*cont,wickCost=qty*wick,lblCost=qty*lbl
+  const totalCost=waxCost+fragCost+contCost+wickCost+lblCost+other
+  const cpc=qty>0?totalCost/qty:0,pvp=cpc*(1+margin/100)
+  $('calc-grid').innerHTML=`
+    <div class="ci"><div class="ci-lbl">Cera necessária</div><div class="ci-val">${fmt(waxKg)} kg</div></div>
+    <div class="ci"><div class="ci-lbl">Essência necessária</div><div class="ci-val">${fmt(fragG)} g</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Cera</div><div class="ci-val">${eur(waxCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Essência</div><div class="ci-val">${eur(fragCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Recipientes</div><div class="ci-val">${eur(contCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Pavios</div><div class="ci-val">${eur(wickCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Etiquetas</div><div class="ci-val">${eur(lblCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Outros</div><div class="ci-val">${eur(other)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">💶 Custo Total</div><div class="ci-val">${eur(totalCost)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">💰 Custo/Vela</div><div class="ci-val">${eur(cpc)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">🏷️ PVP Sugerido</div><div class="ci-val">${eur(pvp)}</div></div>
+  `
+  window._cd={qty,weight,fp,wp,frp,cont,wick,lbl,other,margin,waxKg,fragG,waxCost,fragCost,contCost,wickCost,lblCost,totalCost,cpc,pvp}
+  // Pie chart
+  const costs=[waxCost,fragCost,contCost,wickCost,lblCost,other].map(v=>+v.toFixed(2))
+  makeChart('chart-calc-pie',{type:'doughnut',data:{labels:['Cera','Essência','Recipiente','Pavio','Etiqueta','Outros'],datasets:[{data:costs,backgroundColor:['#c8792a','#5a8fd4','#4a9e6b','#e8a030','#e05252','#9b59b6'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}})
+}
+function calcReset(){
+  $('c-name').value='';$('c-qty').value=100;$('c-weight').value=200;$('c-frag-pct').value=8
+  $('c-wax-price').value=4.50;$('c-frag-price').value=25;$('c-container').value=1.20
+  $('c-wick').value=0.10;$('c-label').value=0.08;$('c-other').value=0;$('c-margin').value=40
+  calcUpdate()
+}
+function saveBatch(){
+  const d=window._cd,name=$('c-name').value.trim()||'Lote '+new Date().toLocaleDateString('pt-PT')
+  DB.set('batches',[...DB.get('batches'),{id:DB.id(),name,date:today(),...d}])
+  renderBatches();$('c-name').value='';alert('Lote guardado!')
+}
+function renderBatches(){
+  const b=DB.get('batches')
+  if(!b.length){$('batch-tbody').innerHTML=`<tr><td colspan="9"><div class="empty"><div class="empty-ico">🧮</div><p>Sem lotes</p></div></td></tr>`;return}
+  $('batch-tbody').innerHTML=[...b].reverse().map(b=>`<tr>
+    <td class="bold">${b.name}</td><td>${fmtDate(b.date)}</td><td class="tc">${b.qty}</td>
+    <td class="tr">${fmt(b.waxKg)} kg</td><td class="tr">${fmt(b.fragG)} g</td>
+    <td class="tr bold">${eur(b.totalCost)}</td><td class="tr">${eur(b.cpc)}</td>
+    <td class="tr">${eur(b.pvp)}</td>
+    <td><button class="btn btn-del btn-sm" onclick="delItem('batches','${b.id}',renderBatches)">🗑️</button></td>
+  </tr>`).join('')
+}
+
+// ── ANÁLISES ──────────────────────────────────────────────
+function renderAnalises(){
+  const orders=DB.get('orders').filter(o=>o.status!=='cancelada')
+  const exp=DB.get('expenses'),inv=DB.get('inventory'),stock=DB.get('stock')
+  const months=last6Months()
+  const salesData=months.map(m=>orders.filter(o=>o.date?.slice(0,7)===m).reduce((s,o)=>s+num(o.qty)*num(o.price),0))
+  const expData=months.map(m=>exp.filter(e=>e.date?.slice(0,7)===m).reduce((s,e)=>s+num(e.amount),0))
+  const profitData=months.map((_,i)=>salesData[i]-expData[i])
+  const totalSales=orders.reduce((s,o)=>s+num(o.qty)*num(o.price),0)
+  const totalExp=exp.reduce((s,e)=>s+num(e.amount),0)
+  const profit=totalSales-totalExp
+  const margin=totalSales>0?(profit/totalSales*100):0
+  $('anal-cards').innerHTML=`
+    <div class="card accent"><div class="card-lbl">Receita Total</div><div class="card-val">${eur(totalSales)}</div></div>
+    <div class="card err"><div class="card-lbl">Despesas Totais</div><div class="card-val">${eur(totalExp)}</div></div>
+    <div class="card ${profit>=0?'ok':'err'}"><div class="card-lbl">Lucro Líquido</div><div class="card-val">${eur(profit)}</div></div>
+    <div class="card"><div class="card-lbl">Margem de Lucro</div><div class="card-val">${fmt(margin,1)}%</div></div>
+  `
+  // Rev vs Exp
+  makeChart('chart-rev-exp',{type:'bar',data:{labels:months.map(monthLabel),datasets:[
+    {label:'Receitas',data:salesData,backgroundColor:'rgba(74,158,107,.7)',borderColor:'#4a9e6b',borderWidth:2,borderRadius:5},
+    {label:'Despesas',data:expData,backgroundColor:'rgba(224,82,82,.6)',borderColor:'#e05252',borderWidth:2,borderRadius:5}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{font:{size:11}}}},scales:{y:{ticks:{callback:v=>'€'+v.toFixed(0)}}}}})
+  // Profit line
+  makeChart('chart-profit',{type:'line',data:{labels:months.map(monthLabel),datasets:[{label:'Lucro',data:profitData,borderColor:'#c8792a',backgroundColor:'rgba(200,121,42,.15)',fill:true,tension:0.4,pointRadius:5,pointBackgroundColor:'#c8792a'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:v=>'€'+v.toFixed(0)},grid:{color:v=>v.tick.value===0?'#e0000060':'#e8d5b820'}},x:{}}}}})
+  // Top products
+  const prodMap={}
+  orders.forEach(o=>{prodMap[o.product]=(prodMap[o.product]||0)+num(o.qty)*num(o.price)})
+  const topProds=Object.entries(prodMap).sort((a,b)=>b[1]-a[1]).slice(0,8)
+  makeChart('chart-top-prod',{type:'bar',data:{labels:topProds.map(([k])=>k),datasets:[{label:'Receita',data:topProds.map(([,v])=>v),backgroundColor:PAL.slice(0,topProds.length),borderWidth:1,borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{callback:v=>'€'+v.toFixed(0)}}}}})
+  // Inv by type
+  const invByType={}
+  inv.forEach(i=>{const t=TYPES[i.type]?.l||i.type;invByType[t]=(invByType[t]||0)+num(i.qty)*num(i.price)})
+  const itKeys=Object.keys(invByType)
+  makeChart('chart-inv-type',{type:'doughnut',data:{labels:itKeys,datasets:[{data:itKeys.map(k=>invByType[k]),backgroundColor:PAL,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}})
+  // Order status
+  const allOrders=DB.get('orders')
+  const statuses=['pendente','processando','enviada','entregue','cancelada']
+  const stCounts=statuses.map(s=>allOrders.filter(o=>o.status===s).length)
+  const stColors=['#fbbf24','#5a8fd4','#f0c080','#4a9e6b','#e05252']
+  makeChart('chart-order-status',{type:'doughnut',data:{labels:['Pendente','A Processar','Enviada','Entregue','Cancelada'],datasets:[{data:stCounts,backgroundColor:stColors,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}})
+  // Exp by cat
+  const byCat={};exp.forEach(e=>{byCat[e.cat]=(byCat[e.cat]||0)+num(e.amount)})
+  const catK=Object.keys(byCat)
+  makeChart('chart-exp-anal',{type:'doughnut',data:{labels:catK.map(c=>CAT_LABELS[c]||c),datasets:[{data:catK.map(c=>byCat[c]),backgroundColor:catK.map(c=>CAT_COLORS[c]||'#ccc'),borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}})
+}
+
+// ── GENERIC ───────────────────────────────────────────────
+function delItem(key,id,cb){
+  if(!confirm('Eliminar este registo?'))return
+  DB.set(key,DB.get(key).filter(x=>x.id!==id))
+  if(cb)cb()
+}
+function exportData(){
+  const data={inventory:DB.get('inventory'),orders:DB.get('orders'),stock:DB.get('stock'),expenses:DB.get('expenses'),batches:DB.get('batches'),receitas:DB.get('receitas'),exportDate:new Date().toISOString()}
+  const a=document.createElement('a')
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}))
+  a.download='velas-backup-'+today()+'.json';a.click()
+}
+function importData(input){
+  const f=input.files[0];if(!f)return
+  const r=new FileReader()
+  r.onload=e=>{
+    try{
+      const d=JSON.parse(e.target.result)
+      if(!confirm('Substituir dados actuais?'))return
+      ;['inventory','orders','stock','expenses','batches','receitas'].forEach(k=>{if(d[k])DB.set(k,d[k])})
+      alert('Dados importados!');renderPage(currentPage)
+    }catch{alert('Ficheiro inválido.')}
+  }
+  r.readAsText(f);input.value=''
+}
+function clearSection(key){if(!confirm('Apagar todos os dados de "'+key+'"?'))return;DB.set(key,[]);renderPage(currentPage);alert('Apagado.')}
+function clearAll(){if(!confirm('Apagar TUDO?'))return;['inventory','orders','stock','expenses','batches','receitas'].forEach(k=>DB.set(k,[]));renderPage(currentPage)}
+
+// ── INIT ──────────────────────────────────────────────────
+calcUpdate()
+renderDashboard()
+</script>
+</body>
+</html>
