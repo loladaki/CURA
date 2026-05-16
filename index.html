@@ -501,38 +501,39 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 </div>
 
 <script>
-// ── SUPABASE REST (sem biblioteca, usa fetch direto) ───────
+// ── SUPABASE REST ──────────────────────────────────────────
 const SB_URL = 'https://qsxefidbfqzbyefsfjwg.supabase.co/rest/v1';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFzeGVmaWRiZnF6YnllZnNmandnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDQ3MDQsImV4cCI6MjA5NDUyMDcwNH0.7WNjp062Sx3S87YH3ZZFyq-Rr5NdWSbymlSBjDQogiA';
 const SB_H  = { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' };
 const TBL   = { inventory:'inventario', orders:'vendas', stock:'stock', expenses:'gastos', batches:'lotes', receitas:'receitas' };
 
+function sbStatus(msg, color) {
+  const el = document.getElementById('sb-status');
+  if (el) { el.textContent = msg; el.style.opacity = '1'; el.style.color = color || 'inherit'; }
+}
+
 async function sbGet(tbl) {
-  const r = await fetch(`${SB_URL}/${tbl}?select=*&order=created_at.asc`, { headers: SB_H });
-  if (!r.ok) throw new Error(`GET ${tbl}: ${r.status} ${await r.text()}`);
+  const r = await fetch(`${SB_URL}/${tbl}?select=*`, { headers: SB_H });
+  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] ${r.status}: ${txt}`); }
   return r.json();
 }
-async function sbInsert(tbl, row) {
+async function sbUpsert(tbl, row) {
   const r = await fetch(`${SB_URL}/${tbl}`, {
-    method: 'POST', headers: { ...SB_H, Prefer: 'return=minimal' }, body: JSON.stringify(row)
+    method: 'POST',
+    headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(row)
   });
-  if (!r.ok) throw new Error(`INSERT ${tbl}: ${r.status} ${await r.text()}`);
-}
-async function sbUpdate(tbl, id, row) {
-  const r = await fetch(`${SB_URL}/${tbl}?id=eq.${encodeURIComponent(id)}`, {
-    method: 'PATCH', headers: { ...SB_H, Prefer: 'return=minimal' }, body: JSON.stringify(row)
-  });
-  if (!r.ok) throw new Error(`UPDATE ${tbl}: ${r.status} ${await r.text()}`);
+  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] upsert ${r.status}: ${txt}`); }
 }
 async function sbDelete(tbl, id) {
   const r = await fetch(`${SB_URL}/${tbl}?id=eq.${encodeURIComponent(id)}`, {
     method: 'DELETE', headers: SB_H
   });
-  if (!r.ok) throw new Error(`DELETE ${tbl}: ${r.status} ${await r.text()}`);
+  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] delete ${r.status}: ${txt}`); }
 }
 async function sbDeleteAll(tbl) {
   const r = await fetch(`${SB_URL}/${tbl}?id=not.is.null`, { method: 'DELETE', headers: SB_H });
-  if (!r.ok) throw new Error(`DELETEALL ${tbl}: ${r.status} ${await r.text()}`);
+  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] deleteAll ${r.status}: ${txt}`); }
 }
 
 function toRow(k, obj) {
@@ -570,52 +571,64 @@ const DB = {
       try {
         if (v.length === 0) {
           await sbDeleteAll(tbl);
-        } else if (v.length > old.length) {
-          const added = v.find(x => !old.find(y => y.id === x.id));
-          if (added) await sbInsert(tbl, toRow(k, added));
-        } else if (v.length === old.length) {
-          const changed = v.find(x => JSON.stringify(x) !== JSON.stringify(old.find(y => y.id === x.id)));
-          if (changed) await sbUpdate(tbl, changed.id, toRow(k, changed));
         } else {
-          const deleted = old.find(x => !v.find(y => y.id === x.id));
-          if (deleted) await sbDelete(tbl, deleted.id);
+          // upsert itens novos ou modificados
+          for (const item of v) {
+            const prev = old.find(x => x.id === item.id);
+            if (!prev || JSON.stringify(prev) !== JSON.stringify(item)) {
+              await sbUpsert(tbl, toRow(k, item));
+            }
+          }
+          // apagar itens removidos
+          for (const item of old) {
+            if (!v.find(x => x.id === item.id)) await sbDelete(tbl, item.id);
+          }
         }
-      } catch(e) { console.warn('SB sync:', e.message); }
+        sbStatus('✅ Supabase ligado', 'var(--ok)');
+      } catch(e) {
+        console.error('SB sync error:', e.message);
+        sbStatus('❌ Erro: ' + e.message.slice(0, 60), '#e05252');
+      }
     })();
   },
   importAll(k, v) {
     CACHE[k] = v;
     try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
     const tbl = TBL[k]; if (!tbl || !v.length) return;
-    (async () => {
-      for (const obj of v) {
-        try { await sbInsert(tbl, toRow(k, obj)); } catch {}
-      }
-    })();
+    (async () => { for (const obj of v) { try { await sbUpsert(tbl, toRow(k, obj)); } catch {} } })();
   },
   id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 };
 
 async function loadAll(pg) {
-  const statusEl = document.getElementById('sb-status');
-  if (statusEl) { statusEl.textContent = '⏳ A carregar...'; statusEl.style.opacity = '1'; statusEl.style.color = 'var(--pl)'; }
-  try {
-    const [inv, ord, stk, exp, bat, rec] = await Promise.all([
-      sbGet('inventario'), sbGet('vendas'), sbGet('stock'),
-      sbGet('gastos'), sbGet('lotes'), sbGet('receitas')
-    ]);
-    CACHE.inventory = inv.map(r => fromRow('inventory', r));
-    CACHE.orders    = ord.map(r => fromRow('orders', r));
-    CACHE.stock     = stk;
-    CACHE.expenses  = exp.map(r => fromRow('expenses', r));
-    CACHE.batches   = bat.map(r => fromRow('batches', r));
-    CACHE.receitas  = rec;
+  sbStatus('⏳ A carregar...', 'var(--pl)');
+  const TABLES = [
+    { tbl:'inventario', k:'inventory' },
+    { tbl:'vendas',     k:'orders'    },
+    { tbl:'stock',      k:'stock'     },
+    { tbl:'gastos',     k:'expenses'  },
+    { tbl:'lotes',      k:'batches'   },
+    { tbl:'receitas',   k:'receitas'  },
+  ];
+  const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
+  let erros = 0;
+  results.forEach((res, i) => {
+    const { k } = TABLES[i];
+    if (res.status === 'fulfilled') {
+      CACHE[k] = res.value.map(r => fromRow(k, r));
+    } else {
+      erros++;
+      console.warn('Falhou:', TABLES[i].tbl, res.reason?.message);
+      try { const s = localStorage.getItem('velas_'+k); if (s) CACHE[k] = JSON.parse(s); } catch {}
+    }
+  });
+  if (erros === 0) {
     lsSave();
-    if (statusEl) { statusEl.textContent = '✅ Supabase ligado'; statusEl.style.color = 'var(--ok)'; }
-  } catch(e) {
-    console.warn('Supabase load failed:', e);
-    lsLoad();
-    if (statusEl) { statusEl.textContent = '⚠️ Offline (cache local)'; statusEl.style.color = 'var(--warn)'; }
+    sbStatus('✅ Supabase ligado', 'var(--ok)');
+  } else if (erros === TABLES.length) {
+    sbStatus('⚠️ Offline — verifica a ligação', 'var(--warn)');
+  } else {
+    sbStatus(`⚠️ ${erros} tabela(s) inacessível`, 'var(--warn)');
   }
   renderPage(pg || currentPage);
 }
