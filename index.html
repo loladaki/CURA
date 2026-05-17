@@ -1226,13 +1226,15 @@ function renderAnalises() {
 
 // ── CLICK HANDLER UNIFICADO ───────────────────────────────
 document.addEventListener('click', function(e) {
+  // Backdrop: só fecha se o clique for DIRETAMENTE no overlay (não num filho)
+  if (e.target.classList && e.target.classList.contains('overlay')) {
+    e.target.classList.remove('open');
+    return;
+  }
+  // Percorre DOM para cima à procura de data-close ou data-action
   var el = e.target;
   for (var n = 0; n < 6 && el && el.tagName; n++) {
-    // Fechar modal
     if (el.dataset && el.dataset.close) { closeModal(el.dataset.close); return; }
-    // Overlay backdrop
-    if (el.classList && el.classList.contains('overlay')) { el.classList.remove('open'); return; }
-    // Botões de ação
     if (el.dataset && el.dataset.action) { doAction(el.dataset.action, el.dataset.id, el.dataset.key, el); return; }
     el = el.parentElement;
   }
