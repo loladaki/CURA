@@ -6,6 +6,7 @@
 <title>🕯️ Velas — Dashboard</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%95%AF%EF%B8%8F%3C/text%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -99,6 +100,15 @@ tr:hover td{background:var(--bg)}
 .chart-box h3{font-size:.9rem;font-weight:600;margin-bottom:12px}
 .chart-wrap{position:relative;height:220px}
 .rec-tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.7rem;background:var(--bg2);margin:2px;border:1px solid var(--border)}
+.cond-field{display:none}
+.cond-field.show{display:flex}
+.inv-link{font-size:.7rem;color:var(--info);cursor:pointer;text-decoration:underline;margin-top:2px;display:inline-block}
+.mat-pick{background:#fff7ed;border:1px solid #fcd9b4;border-radius:8px;padding:10px;margin-bottom:12px}
+.mat-pick h4{font-size:.8rem;font-weight:600;margin-bottom:8px;color:var(--pd)}
+.cost-summary{background:#e0f0ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;margin:10px 0;display:flex;justify-content:space-around;flex-wrap:wrap;gap:8px}
+.cost-summary div{text-align:center}
+.cost-summary .lbl{font-size:.68rem;color:var(--muted);text-transform:uppercase}
+.cost-summary .val{font-size:1rem;font-weight:700;color:var(--pd)}
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
 @media(max-width:750px){.sidebar{width:180px}.main{margin-left:180px;padding:12px}.chart-row{grid-template-columns:1fr}}
@@ -183,11 +193,24 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       <div class="form-grid" style="grid-template-columns:1fr 1fr">
         <div class="fg"><label>Nome do Lote</label><input type="text" id="c-name" placeholder="ex: Lavanda — Maio"></div>
         <div class="fg"><label>Nº de Velas</label><input type="number" id="c-qty" value="100" min="1"></div>
+      </div>
+      <div class="mat-pick">
+        <h4>📦 Materiais do Inventário (opcional — preenche preços automaticamente)</h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fg"><label>🕯️ Cera</label><select id="c-pick-wax"><option value="">— escolher —</option></select></div>
+          <div class="fg"><label>🌸 Essência</label><select id="c-pick-frag"><option value="">— escolher —</option></select></div>
+          <div class="fg"><label>🫙 Recipiente</label><select id="c-pick-cont"><option value="">— escolher —</option></select></div>
+          <div class="fg"><label>🔥 Pavio</label><select id="c-pick-wick"><option value="">— escolher —</option></select></div>
+          <div class="fg"><label>🏷️ Etiqueta</label><select id="c-pick-lbl"><option value="">— escolher —</option></select></div>
+        </div>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr">
         <div class="fg"><label>Volume do Recipiente (ml)</label><input type="number" id="c-vol" placeholder="ex: 250" min="1" step="1"></div>
         <div class="fg"><label>Densidade da Cera (g/ml)</label><input type="number" id="c-density" value="0.80" min="0.1" max="2" step="0.01"></div>
         <div class="fg"><label>Peso por Vela (g) <span style="font-weight:400;font-size:.65rem;color:var(--p)">← calculado</span></label><input type="number" id="c-weight" value="200" min="1"></div>
         <div class="fg"><label>% de Essência</label><input type="number" id="c-frag-pct" value="8" min="0" max="15" step="0.5"></div>
       </div>
+      <div id="c-flash-warn" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:6px 10px;border-radius:6px;font-size:.78rem;margin:8px 0"></div>
       <hr class="hr">
       <h3 style="margin-bottom:10px">💶 Custos</h3>
       <div class="form-grid" style="grid-template-columns:1fr 1fr">
@@ -316,6 +339,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-p" id="btn-export">⬇️ Exportar JSON</button>
       <label class="btn btn-ghost" style="cursor:pointer">⬆️ Importar JSON<input type="file" id="import-file" accept=".json" style="display:none"></label>
+      <button class="btn btn-ghost" id="btn-export-xlsx">📊 Exportar Excel (todas as tabelas)</button>
     </div>
   </div>
   <div class="box">
@@ -379,6 +403,17 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       <div class="fg"><label>Preço por Unidade (€)</label><input type="number" id="inv-price" placeholder="0.00" min="0" step="0.01"></div>
       <div class="fg"><label>Stock Mínimo</label><input type="number" id="inv-min" placeholder="0" min="0" step="0.001"></div>
       <div class="fg"><label>Fornecedor</label><input type="text" id="inv-supplier" placeholder="Nome do fornecedor"></div>
+      <div class="fg"><label>Estado</label>
+        <select id="inv-status">
+          <option value="em_stock">✅ Em stock</option>
+          <option value="a_caminho">🚚 A caminho</option>
+        </select>
+      </div>
+      <!-- Campos condicionais por tipo -->
+      <div class="fg cond-field" data-cond="cera"><label>🌡️ Ponto Fusão (°C)</label><input type="number" id="inv-melt" placeholder="ex: 50" step="0.5"></div>
+      <div class="fg cond-field" data-cond="cera"><label>⚖️ Densidade (g/ml)</label><input type="number" id="inv-density" placeholder="0.80" step="0.01" min="0"></div>
+      <div class="fg cond-field" data-cond="essencia"><label>🔥 Flash Point (°C)</label><input type="number" id="inv-flash" placeholder="ex: 70" step="0.5"></div>
+      <div class="fg cond-field" data-cond="recipiente"><label>📏 Volume (ml)</label><input type="number" id="inv-volume" placeholder="ex: 250" step="1"></div>
       <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="inv-notes" placeholder="Observações..."></textarea></div>
     </div>
     <div class="modal-ftr">
@@ -395,15 +430,31 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     <input type="hidden" id="rec-id">
     <div class="form-grid">
       <div class="fg" style="grid-column:1/-1"><label>Nome da Receita *</label><input type="text" id="rec-name" placeholder="ex: Vela Lavanda & Baunilha"></div>
-      <div class="fg"><label>Tipo de Cera</label><input type="text" id="rec-wax" placeholder="ex: Soja, Coco"></div>
       <div class="fg"><label>Peso da Vela (g)</label><input type="number" id="rec-weight" placeholder="200"></div>
       <div class="fg"><label>% Essência</label><input type="number" id="rec-fragpct" placeholder="8" step="0.5"></div>
       <div class="fg"><label>Temperatura (°C)</label><input type="number" id="rec-temp" placeholder="55"></div>
-      <div class="fg"><label>Tipo de Pavio</label><input type="text" id="rec-wick" placeholder="ex: CD 14, ECO 4"></div>
-      <div class="fg"><label>Recipiente</label><input type="text" id="rec-container" placeholder="ex: Copo Vidro 20cl"></div>
       <div class="fg"><label>Tempo de Cura (h)</label><input type="number" id="rec-cure" placeholder="48"></div>
     </div>
-    <div class="fg" style="margin-bottom:10px"><label>Fragrâncias</label><input type="text" id="rec-frags" placeholder="ex: Lavanda 6% + Baunilha 2%"></div>
+    <div class="mat-pick">
+      <h4>📦 Materiais (do Inventário)</h4>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr">
+        <div class="fg"><label>🕯️ Cera</label><select id="rec-pick-wax"><option value="">— escolher —</option></select></div>
+        <div class="fg"><label>🌸 Essência</label><select id="rec-pick-frag"><option value="">— escolher —</option></select></div>
+        <div class="fg"><label>🫙 Recipiente</label><select id="rec-pick-cont"><option value="">— escolher —</option></select></div>
+        <div class="fg"><label>🔥 Pavio</label><select id="rec-pick-wick"><option value="">— escolher —</option></select></div>
+      </div>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:6px">Tipo livre (caso não tenhas no inventário): <input type="text" id="rec-wax" placeholder="Cera" style="font-size:.75rem;padding:3px 6px;width:100px"> <input type="text" id="rec-wick" placeholder="Pavio" style="font-size:.75rem;padding:3px 6px;width:100px"> <input type="text" id="rec-container" placeholder="Recipiente" style="font-size:.75rem;padding:3px 6px;width:130px"></div>
+    </div>
+    <div id="rec-cost-summary" class="cost-summary" style="display:none">
+      <div><div class="lbl">Custo Material</div><div class="val" id="rec-cost-mat">€0,00</div></div>
+      <div><div class="lbl">Custo Total/Vela</div><div class="val" id="rec-cost-total">€0,00</div></div>
+      <div><div class="lbl">PVP Sugerido</div><div class="val" id="rec-pvp-sug">€0,00</div></div>
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>Margem (%)</label><input type="number" id="rec-margin" value="40" min="0" step="1"></div>
+      <div class="fg"><label>PVP Final (€)</label><input type="number" id="rec-pvp" placeholder="0.00" step="0.01"></div>
+    </div>
+    <div class="fg" style="margin-bottom:10px"><label>Fragrâncias (texto livre)</label><input type="text" id="rec-frags" placeholder="ex: Lavanda 6% + Baunilha 2%"></div>
     <div class="fg" style="margin-bottom:10px"><label>Corante</label><input type="text" id="rec-color" placeholder="ex: Roxo — 2 gotas por 100g"></div>
     <div class="fg" style="margin-bottom:10px">
       <label>Avaliação</label>
@@ -423,6 +474,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
   <div class="modal">
     <div class="modal-hdr"><h3 id="stock-modal-title">Adicionar Vela</h3><button class="modal-x" data-close="stock-modal">✕</button></div>
     <input type="hidden" id="stock-id">
+    <div class="mat-pick">
+      <h4>🧪 Criar a partir de Receita (opcional)</h4>
+      <select id="stock-pick-rec" style="width:100%"><option value="">— escolher receita —</option></select>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:4px">Auto-preenche nome, essência, custo e PVP</div>
+    </div>
     <div class="form-grid">
       <div class="fg" style="grid-column:1/-1"><label>Nome *</label><input type="text" id="stock-name" placeholder="ex: Vela Lavanda 200g"></div>
       <div class="fg"><label>Essência/Aroma</label><input type="text" id="stock-frag" placeholder="ex: Lavanda"></div>
@@ -500,6 +556,37 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       <div class="fg"><label>Fornecedor</label><input type="text" id="exp-vendor" placeholder="ex: Amazon"></div>
       <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="exp-notes" placeholder="Notas..."></textarea></div>
     </div>
+    <div class="mat-pick" style="margin-top:8px">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-size:.85rem;font-weight:600">
+        <input type="checkbox" id="exp-to-inv"> 📦 Adicionar ao inventário (com nota "a caminho")
+      </label>
+      <div id="exp-inv-fields" style="display:none;margin-top:10px">
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fg"><label>Nome do Material</label><input type="text" id="exp-inv-name" placeholder="ex: Cera de Soja"></div>
+          <div class="fg"><label>Tipo</label>
+            <select id="exp-inv-type">
+              <option value="cera">🕯️ Cera</option>
+              <option value="essencia">🌸 Essência</option>
+              <option value="pavio">🔥 Pavio</option>
+              <option value="recipiente">🫙 Recipiente</option>
+              <option value="autocolante">🏷️ Autocolante</option>
+              <option value="embalagem">📦 Embalagem</option>
+              <option value="corante">🎨 Corante</option>
+              <option value="aditivo">⚗️ Aditivo</option>
+              <option value="outro">📌 Outro</option>
+            </select>
+          </div>
+          <div class="fg"><label>Unidade</label>
+            <select id="exp-inv-unit">
+              <option value="kg">kg</option><option value="g">g</option>
+              <option value="L">L</option><option value="ml">ml</option>
+              <option value="un">unidade(s)</option>
+            </select>
+          </div>
+          <div class="fg"><label>Quantidade</label><input type="number" id="exp-inv-qty" placeholder="0" step="0.001"></div>
+        </div>
+      </div>
+    </div>
     <div class="modal-ftr">
       <button class="btn btn-ghost" data-close="exp-modal">Cancelar</button>
       <button class="btn btn-p" id="btn-save-exp">Guardar</button>
@@ -551,18 +638,34 @@ async function sbDeleteAll(tbl) {
 function toRow(k, obj) {
   const r = { ...obj }; delete r.created_at;
   if (k === 'expenses') { r.descricao = r.desc; delete r.desc; }
+  if (k === 'inventory') {
+    const m = { meltTemp:'melt_temp', flashPoint:'flash_point' };
+    Object.entries(m).forEach(([js, sql]) => { if (r[js] !== undefined) { r[sql] = r[js]; delete r[js]; } });
+  }
   if (k === 'batches') {
     const m = { waxKg:'wax_kg', fragG:'frag_g', waxCost:'wax_cost', fragCost:'frag_cost', contCost:'cont_cost', wickCost:'wick_cost', lblCost:'lbl_cost', totalCost:'total_cost' };
     Object.entries(m).forEach(([js, sql]) => { r[sql] = r[js]; delete r[js]; });
+  }
+  if (k === 'receitas') {
+    const m = { ceraId:'cera_id', essenciaId:'essencia_id', recipienteId:'recipiente_id', pavioId:'pavio_id' };
+    Object.entries(m).forEach(([js, sql]) => { if (r[js] !== undefined) { r[sql] = r[js]; delete r[js]; } });
   }
   return r;
 }
 function fromRow(k, r) {
   const obj = { ...r };
   if (k === 'expenses') { obj.desc = obj.descricao; delete obj.descricao; }
+  if (k === 'inventory') {
+    const m = { melt_temp:'meltTemp', flash_point:'flashPoint' };
+    Object.entries(m).forEach(([sql, js]) => { if (obj[sql] !== undefined) { obj[js] = obj[sql]; delete obj[sql]; } });
+  }
   if (k === 'batches') {
     const m = { wax_kg:'waxKg', frag_g:'fragG', wax_cost:'waxCost', frag_cost:'fragCost', cont_cost:'contCost', wick_cost:'wickCost', lbl_cost:'lblCost', total_cost:'totalCost' };
     Object.entries(m).forEach(([sql, js]) => { obj[js] = obj[sql]; delete obj[sql]; });
+  }
+  if (k === 'receitas') {
+    const m = { cera_id:'ceraId', essencia_id:'essenciaId', recipiente_id:'recipienteId', pavio_id:'pavioId' };
+    Object.entries(m).forEach(([sql, js]) => { if (obj[sql] !== undefined) { obj[js] = obj[sql]; delete obj[sql]; } });
   }
   return obj;
 }
@@ -821,16 +924,27 @@ function renderInventory() {
   tbody.innerHTML = filtered.map(i => {
     const total = num(i.qty) * num(i.price);
     const low = num(i.min) > 0 && num(i.qty) <= num(i.min);
-    return `<tr>
-      <td><div class="bold">${i.name}</div>${i.supplier ? `<div class="muted" style="font-size:.72rem">${i.supplier}</div>` : ''}</td>
+    const aCaminho = i.status === 'a_caminho';
+    let extra = '';
+    if (i.type === 'cera' && (i.meltTemp || i.density)) extra = `<div class="muted" style="font-size:.7rem">${i.meltTemp?`🌡️ ${i.meltTemp}°C`:''} ${i.density?`⚖️ ${i.density}g/ml`:''}</div>`;
+    else if (i.type === 'essencia' && i.flashPoint) extra = `<div class="muted" style="font-size:.7rem">🔥 Flash: ${i.flashPoint}°C</div>`;
+    else if (i.type === 'recipiente' && i.volume) extra = `<div class="muted" style="font-size:.7rem">📏 ${i.volume}ml</div>`;
+    let statusBadge;
+    if (aCaminho) statusBadge = '<span class="badge b-blue">🚚 A caminho</span>';
+    else if (low) statusBadge = '<span class="badge b-red">⚠️ Baixo</span>';
+    else statusBadge = '<span class="badge b-green">✅ OK</span>';
+    const arrivedBtn = aCaminho ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46" data-action="inv-arrived" data-id="${i.id}" title="Marcar como chegado">📥</button>` : '';
+    return `<tr ${aCaminho?'style="opacity:.7"':''}>
+      <td><div class="bold">${i.name}</div>${i.supplier ? `<div class="muted" style="font-size:.72rem">${i.supplier}</div>` : ''}${extra}</td>
       <td>${TYPES[i.type] || i.type}</td>
       <td>${i.unit}</td>
       <td class="tr bold" style="${low ? 'color:var(--err)' : ''}">${fmt(i.qty, 3)}</td>
       <td class="tr">${eur(i.price)}</td>
       <td class="tr bold">${eur(total)}</td>
       <td class="tc">${i.min > 0 ? fmt(i.min, 3) : '—'}</td>
-      <td>${low ? '<span class="badge b-red">⚠️ Baixo</span>' : '<span class="badge b-green">✅ OK</span>'}</td>
+      <td>${statusBadge}</td>
       <td style="white-space:nowrap">
+        ${arrivedBtn}
         <button class="btn btn-ed btn-sm" data-action="edit-inv" data-id="${i.id}">✏️</button>
         <button class="btn btn-del btn-sm" data-action="del" data-key="inventory" data-id="${i.id}">🗑️</button>
       </td>
@@ -840,10 +954,22 @@ function renderInventory() {
 
 $('inv-type-filter').addEventListener('change', renderInventory);
 
+// Mostra/esconde campos condicionais baseado no tipo
+function updateInvCondFields() {
+  const type = $('inv-type').value;
+  document.querySelectorAll('#inv-modal .cond-field').forEach(el => {
+    el.classList.toggle('show', el.dataset.cond === type);
+  });
+}
+$('inv-type').addEventListener('change', updateInvCondFields);
+
 $('btn-add-inv').addEventListener('click', () => {
   $('inv-modal-title').textContent = 'Adicionar Material';
   $('inv-id').value = ''; $('inv-name').value = ''; $('inv-type').value = 'cera'; $('inv-unit').value = 'kg';
   $('inv-qty').value = ''; $('inv-price').value = ''; $('inv-min').value = ''; $('inv-supplier').value = ''; $('inv-notes').value = '';
+  $('inv-status').value = 'em_stock';
+  $('inv-melt').value = ''; $('inv-density').value = '0.80'; $('inv-flash').value = ''; $('inv-volume').value = '';
+  updateInvCondFields();
   openModal('inv-modal');
 });
 
@@ -851,14 +977,20 @@ $('btn-save-inv').addEventListener('click', () => {
   const name = $('inv-name').value.trim();
   if (!name) { alert('Nome obrigatório'); return; }
   const items = DB.get('inventory'), id = $('inv-id').value;
-  const obj = { id: id || DB.id(), name, type: $('inv-type').value, unit: $('inv-unit').value,
+  const type = $('inv-type').value;
+  const obj = { id: id || DB.id(), name, type, unit: $('inv-unit').value,
     qty: num($('inv-qty').value), price: num($('inv-price').value),
-    min: num($('inv-min').value), supplier: $('inv-supplier').value.trim(), notes: $('inv-notes').value.trim() };
+    min: num($('inv-min').value), supplier: $('inv-supplier').value.trim(), notes: $('inv-notes').value.trim(),
+    status: $('inv-status').value };
+  if (type === 'cera') { obj.meltTemp = num($('inv-melt').value); obj.density = num($('inv-density').value) || 0.80; }
+  if (type === 'essencia') { obj.flashPoint = num($('inv-flash').value); }
+  if (type === 'recipiente') { obj.volume = num($('inv-volume').value); }
   if (id) { const idx = items.findIndex(x => x.id === id); items[idx] = obj; }
   else items.push(obj);
   DB.set('inventory', items);
   closeModal('inv-modal');
   renderInventory();
+  refreshAllDropdowns();
 });
 
 // ── RECEITAS ──────────────────────────────────────────────
@@ -884,10 +1016,57 @@ document.addEventListener('click', e => {
   }
 });
 
+// Calcula custo automático de uma receita com base nos materiais escolhidos
+function calcRecCost() {
+  const weight = num($('rec-weight').value);
+  const fragpct = num($('rec-fragpct').value);
+  if (!weight) return null;
+  const fragG = weight * (fragpct/100), waxG = weight - fragG;
+  let costMat = 0;
+  const waxItem = DB.get('inventory').find(x => x.id === $('rec-pick-wax').value);
+  if (waxItem && waxItem.price) {
+    const pricePerG = waxItem.unit === 'kg' ? waxItem.price/1000 : (waxItem.unit === 'g' ? waxItem.price : waxItem.price/1000);
+    costMat += waxG * pricePerG;
+  }
+  const fragItem = DB.get('inventory').find(x => x.id === $('rec-pick-frag').value);
+  if (fragItem && fragItem.price) {
+    const pricePerG = fragItem.unit === 'kg' ? fragItem.price/1000 : (fragItem.unit === 'g' ? fragItem.price : fragItem.price/1000);
+    costMat += fragG * pricePerG;
+  }
+  const contItem = DB.get('inventory').find(x => x.id === $('rec-pick-cont').value);
+  if (contItem && contItem.price) costMat += contItem.price;
+  const wickItem = DB.get('inventory').find(x => x.id === $('rec-pick-wick').value);
+  if (wickItem && wickItem.price) costMat += wickItem.price;
+  const margin = num($('rec-margin').value) || 40;
+  const pvpSug = costMat * (1 + margin/100);
+  const sum = $('rec-cost-summary');
+  if (sum) {
+    sum.style.display = costMat > 0 ? 'flex' : 'none';
+    $('rec-cost-mat').textContent = eur(costMat);
+    $('rec-cost-total').textContent = eur(costMat);
+    $('rec-pvp-sug').textContent = eur(pvpSug);
+  }
+  return { costMat, pvpSug };
+}
+['rec-weight','rec-fragpct','rec-margin','rec-pick-wax','rec-pick-frag','rec-pick-cont','rec-pick-wick'].forEach(id => {
+  const el = $(id); if (el) el.addEventListener('input', calcRecCost);
+  if (el && el.tagName === 'SELECT') el.addEventListener('change', calcRecCost);
+});
+// Auto-preenche o PVP final com o sugerido (se vazio)
+['rec-pick-wax','rec-pick-frag','rec-pick-cont','rec-pick-wick','rec-margin'].forEach(id => {
+  const el = $(id); if (el) el.addEventListener('change', () => {
+    const r = calcRecCost();
+    if (r && r.pvpSug > 0 && !num($('rec-pvp').value)) $('rec-pvp').value = r.pvpSug.toFixed(2);
+  });
+});
+
 $('btn-add-rec').addEventListener('click', () => {
   $('rec-modal-title').textContent = 'Nova Receita';
-  ['rec-id','rec-name','rec-wax','rec-weight','rec-fragpct','rec-temp','rec-wick','rec-container','rec-cure','rec-frags','rec-color','rec-notes'].forEach(id => $(id).value = '');
+  ['rec-id','rec-name','rec-wax','rec-weight','rec-fragpct','rec-temp','rec-wick','rec-container','rec-cure','rec-frags','rec-color','rec-notes','rec-pvp'].forEach(id => $(id).value = '');
+  ['rec-pick-wax','rec-pick-frag','rec-pick-cont','rec-pick-wick'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  $('rec-margin').value = 40;
   recRating = 0; $('rec-rating').value = 0; buildStars(0);
+  refreshAllDropdowns(); calcRecCost();
   openModal('rec-modal');
 });
 
@@ -895,17 +1074,32 @@ $('btn-save-rec').addEventListener('click', () => {
   const name = $('rec-name').value.trim();
   if (!name) { alert('Nome obrigatório'); return; }
   const items = DB.get('receitas'), id = $('rec-id').value;
-  const obj = { id: id || DB.id(), name, wax: $('rec-wax').value.trim(), weight: num($('rec-weight').value),
-    fragpct: num($('rec-fragpct').value), temp: num($('rec-temp').value), wick: $('rec-wick').value.trim(),
-    container: $('rec-container').value.trim(), cure: num($('rec-cure').value),
+  const costInfo = calcRecCost() || { costMat: 0, pvpSug: 0 };
+  // Auto-preenche o nome do material livre se um item do inventário foi selecionado
+  const waxItem = DB.get('inventory').find(x => x.id === $('rec-pick-wax').value);
+  const wickItem = DB.get('inventory').find(x => x.id === $('rec-pick-wick').value);
+  const contItem = DB.get('inventory').find(x => x.id === $('rec-pick-cont').value);
+  const obj = { id: id || DB.id(), name,
+    wax: $('rec-wax').value.trim() || (waxItem ? waxItem.name : ''),
+    weight: num($('rec-weight').value),
+    fragpct: num($('rec-fragpct').value), temp: num($('rec-temp').value),
+    wick: $('rec-wick').value.trim() || (wickItem ? wickItem.name : ''),
+    container: $('rec-container').value.trim() || (contItem ? contItem.name : ''),
+    cure: num($('rec-cure').value),
     frags: $('rec-frags').value.trim(), color: $('rec-color').value.trim(),
     notes: $('rec-notes').value.trim(), rating: num($('rec-rating').value),
+    cost: costInfo.costMat, pvp: num($('rec-pvp').value) || costInfo.pvpSug,
+    ceraId: $('rec-pick-wax').value || null,
+    essenciaId: $('rec-pick-frag').value || null,
+    recipienteId: $('rec-pick-cont').value || null,
+    pavioId: $('rec-pick-wick').value || null,
     date: id ? (items.find(x => x.id === id)?.date || today()) : today() };
   if (id) { const idx = items.findIndex(x => x.id === id); items[idx] = obj; }
   else items.push(obj);
   DB.set('receitas', items);
   closeModal('rec-modal');
   renderReceitas();
+  refreshAllDropdowns();
 });
 
 function renderReceitas() {
@@ -916,7 +1110,9 @@ function renderReceitas() {
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-ico">🧪</div><p>Sem receitas. Adiciona a tua primeira fórmula!</p></div>`;
     return;
   }
-  grid.innerHTML = items.map(r => `
+  grid.innerHTML = items.map(r => {
+    const margin = r.cost > 0 ? ((r.pvp - r.cost) / r.cost * 100).toFixed(0) : null;
+    return `
     <div class="box" style="margin:0">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
         <div style="font-weight:700;font-size:.92rem">${r.name}</div>
@@ -931,6 +1127,11 @@ function renderReceitas() {
         ${r.container?`<span class="rec-tag">🫙 ${r.container}</span>`:''}
         ${r.cure?`<span class="rec-tag">⏱️ ${r.cure}h</span>`:''}
       </div>
+      ${(r.cost > 0 || r.pvp > 0) ? `<div style="display:flex;gap:12px;padding:6px 8px;background:var(--bg2);border-radius:6px;margin-bottom:6px;font-size:.78rem">
+        ${r.cost ? `<div>💶 Custo: <b>${eur(r.cost)}</b></div>` : ''}
+        ${r.pvp ? `<div>🏷️ PVP: <b style="color:var(--pd)">${eur(r.pvp)}</b></div>` : ''}
+        ${margin !== null ? `<div>📈 Margem: <b style="color:${margin>=30?'var(--ok)':'var(--warn)'}">${margin}%</b></div>` : ''}
+      </div>` : ''}
       ${r.frags?`<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">🌺 ${r.frags}</div>`:''}
       ${r.color?`<div style="font-size:.78rem;color:var(--muted);margin-bottom:4px">🎨 ${r.color}</div>`:''}
       ${r.notes?`<div style="font-size:.78rem;background:var(--bg2);padding:6px 8px;border-radius:6px;margin-top:6px">${r.notes}</div>`:''}
@@ -938,7 +1139,8 @@ function renderReceitas() {
         <button class="btn btn-ed btn-sm" data-action="edit-rec" data-id="${r.id}">✏️ Editar</button>
         <button class="btn btn-del btn-sm" data-action="del" data-key="receitas" data-id="${r.id}">🗑️</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── STOCK ─────────────────────────────────────────────────
@@ -982,7 +1184,22 @@ function renderStock() {
 $('btn-add-stock').addEventListener('click', () => {
   $('stock-modal-title').textContent = 'Adicionar Vela';
   ['stock-id','stock-name','stock-frag','stock-size','stock-qty','stock-cost','stock-pvp','stock-notes'].forEach(id => $(id).value = '');
+  if ($('stock-pick-rec')) $('stock-pick-rec').value = '';
+  refreshAllDropdowns();
   openModal('stock-modal');
+});
+
+// Quando escolhes uma receita, auto-preenche os campos do stock
+const stockPickRec = $('stock-pick-rec');
+if (stockPickRec) stockPickRec.addEventListener('change', () => {
+  const r = DB.get('receitas').find(x => x.id === stockPickRec.value);
+  if (!r) return;
+  $('stock-name').value = r.name;
+  if (r.frags) $('stock-frag').value = r.frags.split(/[+,]/)[0].trim();
+  if (r.weight) $('stock-size').value = r.weight + 'g';
+  if (r.cost) $('stock-cost').value = r.cost.toFixed(2);
+  if (r.pvp) $('stock-pvp').value = r.pvp.toFixed(2);
+  if (r.notes) $('stock-notes').value = '(de ' + r.name + ') ' + (r.notes || '');
 });
 
 $('btn-save-stock').addEventListener('click', () => {
@@ -1109,15 +1326,46 @@ $('btn-add-exp').addEventListener('click', () => {
   $('exp-modal-title').textContent='Registar Despesa'; $('exp-id').value='';
   $('exp-date').value=today(); $('exp-cat').value='materias-primas';
   $('exp-desc').value=''; $('exp-amount').value=''; $('exp-vendor').value=''; $('exp-notes').value='';
+  $('exp-to-inv').checked = false; $('exp-inv-fields').style.display = 'none';
+  $('exp-inv-name').value = ''; $('exp-inv-qty').value = '';
   openModal('exp-modal');
 });
+
+// Mostra/esconde campos de inventário no modal de despesas
+$('exp-to-inv').addEventListener('change', () => {
+  $('exp-inv-fields').style.display = $('exp-to-inv').checked ? 'block' : 'none';
+  if ($('exp-to-inv').checked && !$('exp-inv-name').value) {
+    $('exp-inv-name').value = $('exp-desc').value;
+  }
+});
+
 $('btn-save-exp').addEventListener('click', () => {
   const desc=$('exp-desc').value.trim(); if(!desc){alert('Descrição obrigatória');return;}
   const expenses=DB.get('expenses'), id=$('exp-id').value;
   const obj={id:id||DB.id(),date:$('exp-date').value,cat:$('exp-cat').value,desc,
     amount:num($('exp-amount').value),vendor:$('exp-vendor').value.trim(),notes:$('exp-notes').value.trim()};
   if(id){const idx=expenses.findIndex(x=>x.id===id);expenses[idx]=obj;}else expenses.push(obj);
-  DB.set('expenses',expenses); closeModal('exp-modal'); renderExpCards(); renderExpenses();
+  DB.set('expenses',expenses);
+  // Se o checkbox estiver marcado, adiciona também ao inventário com status "a caminho"
+  if (!id && $('exp-to-inv').checked) {
+    const invName = $('exp-inv-name').value.trim() || desc;
+    const invQty = num($('exp-inv-qty').value);
+    if (invName) {
+      const invItems = DB.get('inventory');
+      const invType = $('exp-inv-type').value;
+      const newItem = {
+        id: DB.id(), name: invName, type: invType, unit: $('exp-inv-unit').value,
+        qty: invQty, price: invQty > 0 ? num($('exp-amount').value) / invQty : 0,
+        min: 0, supplier: $('exp-vendor').value.trim(), notes: 'Comprado em ' + $('exp-date').value,
+        status: 'a_caminho'
+      };
+      if (invType === 'cera') { newItem.density = 0.80; }
+      invItems.push(newItem);
+      DB.set('inventory', invItems);
+      refreshAllDropdowns();
+    }
+  }
+  closeModal('exp-modal'); renderExpCards(); renderExpenses();
 });
 
 // ── CALCULATOR ────────────────────────────────────────────
@@ -1132,6 +1380,80 @@ calcInputIds.forEach(id => { const el=$(id); if(el) el.addEventListener('input',
     if(vol>0) { $('c-weight').value=(vol*dens).toFixed(1); }
   });
 });
+
+// ── HELPER: fill dropdown with inventory items of a type ──
+function fillInvDropdown(selectId, type, placeholder) {
+  const sel = $(selectId); if (!sel) return;
+  const items = DB.get('inventory').filter(i => i.type === type && (i.status !== 'a_caminho') && num(i.qty) > 0);
+  const current = sel.value;
+  sel.innerHTML = '<option value="">'+(placeholder||'— escolher —')+'</option>' +
+    items.map(i => `<option value="${i.id}">${i.name} (${eur(i.price)}/${i.unit})</option>`).join('');
+  if (current && items.find(i => i.id === current)) sel.value = current;
+}
+function refreshAllDropdowns() {
+  fillInvDropdown('c-pick-wax', 'cera');
+  fillInvDropdown('c-pick-frag', 'essencia');
+  fillInvDropdown('c-pick-cont', 'recipiente');
+  fillInvDropdown('c-pick-wick', 'pavio');
+  fillInvDropdown('c-pick-lbl', 'autocolante');
+  fillInvDropdown('rec-pick-wax', 'cera');
+  fillInvDropdown('rec-pick-frag', 'essencia');
+  fillInvDropdown('rec-pick-cont', 'recipiente');
+  fillInvDropdown('rec-pick-wick', 'pavio');
+  // Stock from recipe dropdown
+  const rs = $('stock-pick-rec');
+  if (rs) {
+    const recs = DB.get('receitas');
+    const cur = rs.value;
+    rs.innerHTML = '<option value="">— escolher receita —</option>' +
+      recs.map(r => `<option value="${r.id}">${r.name}${r.pvp?` (€${r.pvp})`:''}</option>`).join('');
+    if (cur && recs.find(r => r.id === cur)) rs.value = cur;
+  }
+}
+
+// Listeners para os pickers da calculadora
+function setupCalcPickers() {
+  const wax = $('c-pick-wax'); if (wax) wax.addEventListener('change', () => {
+    const i = DB.get('inventory').find(x => x.id === wax.value); if (!i) return;
+    if (i.price) $('c-wax-price').value = (i.unit === 'g' ? i.price * 1000 : i.price).toFixed(2);
+    if (i.density) $('c-density').value = i.density;
+    calcUpdate();
+  });
+  const frag = $('c-pick-frag'); if (frag) frag.addEventListener('change', () => {
+    const i = DB.get('inventory').find(x => x.id === frag.value); if (!i) return;
+    if (i.price) $('c-frag-price').value = (i.unit === 'g' ? i.price * 1000 : i.price).toFixed(2);
+    checkFlashPoint();
+    calcUpdate();
+  });
+  const cont = $('c-pick-cont'); if (cont) cont.addEventListener('change', () => {
+    const i = DB.get('inventory').find(x => x.id === cont.value); if (!i) return;
+    if (i.price) $('c-container').value = i.price.toFixed(2);
+    if (i.volume) { $('c-vol').value = i.volume; const dens = num($('c-density').value)||0.80; $('c-weight').value=(i.volume*dens).toFixed(1); }
+    calcUpdate();
+  });
+  const wick = $('c-pick-wick'); if (wick) wick.addEventListener('change', () => {
+    const i = DB.get('inventory').find(x => x.id === wick.value); if (!i) return;
+    if (i.price) $('c-wick').value = i.price.toFixed(2);
+    calcUpdate();
+  });
+  const lbl = $('c-pick-lbl'); if (lbl) lbl.addEventListener('change', () => {
+    const i = DB.get('inventory').find(x => x.id === lbl.value); if (!i) return;
+    if (i.price) $('c-label').value = i.price.toFixed(2);
+    calcUpdate();
+  });
+  const frpct = $('c-frag-pct'); if (frpct) frpct.addEventListener('input', checkFlashPoint);
+}
+function checkFlashPoint() {
+  const frag = $('c-pick-frag'); if (!frag) return;
+  const i = DB.get('inventory').find(x => x.id === frag.value);
+  const pct = num($('c-frag-pct').value);
+  const warn = $('c-flash-warn');
+  if (!warn) return;
+  if (i && i.flashPoint && i.flashPoint < 60 && pct > 8) {
+    warn.style.display = 'block';
+    warn.textContent = `⚠️ Flash Point baixo (${i.flashPoint}°C) — considera baixar a % de essência ou usar temperatura de mistura mais baixa.`;
+  } else { warn.style.display = 'none'; }
+}
 
 function calcUpdate() {
   const qty=num($('c-qty')?.value), weight=num($('c-weight')?.value), fp=num($('c-frag-pct')?.value);
@@ -1247,7 +1569,14 @@ function doAction(action, id, key, btn) {
       $('inv-modal-title').textContent='Editar Material';
       $('inv-id').value=i.id; $('inv-name').value=i.name; $('inv-type').value=i.type; $('inv-unit').value=i.unit;
       $('inv-qty').value=i.qty; $('inv-price').value=i.price; $('inv-min').value=i.min||''; $('inv-supplier').value=i.supplier||''; $('inv-notes').value=i.notes||'';
+      $('inv-status').value = i.status || 'em_stock';
+      $('inv-melt').value = i.meltTemp || ''; $('inv-density').value = i.density || '0.80';
+      $('inv-flash').value = i.flashPoint || ''; $('inv-volume').value = i.volume || '';
+      updateInvCondFields();
       openModal('inv-modal');
+    } else if (action === 'inv-arrived') {
+      var items = DB.get('inventory'); var idx = items.findIndex(function(x){return x.id===id;});
+      if (idx >= 0) { items[idx].status = 'em_stock'; DB.set('inventory', items); renderInventory(); }
     } else if (action === 'edit-stock') {
       var i = DB.get('stock').find(function(x){return x.id===id;}); if(!i) return;
       $('stock-modal-title').textContent='Editar Vela';
@@ -1274,6 +1603,13 @@ function doAction(action, id, key, btn) {
       $('rec-fragpct').value=r.fragpct||''; $('rec-temp').value=r.temp||''; $('rec-wick').value=r.wick||'';
       $('rec-container').value=r.container||''; $('rec-cure').value=r.cure||''; $('rec-frags').value=r.frags||'';
       $('rec-color').value=r.color||''; $('rec-notes').value=r.notes||''; buildStars(r.rating||0); recRating=r.rating||0; $('rec-rating').value=recRating;
+      $('rec-pvp').value = r.pvp || ''; $('rec-margin').value = 40;
+      refreshAllDropdowns();
+      if ($('rec-pick-wax')) $('rec-pick-wax').value = r.ceraId || '';
+      if ($('rec-pick-frag')) $('rec-pick-frag').value = r.essenciaId || '';
+      if ($('rec-pick-cont')) $('rec-pick-cont').value = r.recipienteId || '';
+      if ($('rec-pick-wick')) $('rec-pick-wick').value = r.pavioId || '';
+      calcRecCost();
       openModal('rec-modal');
     } else if (action === 'del') {
       if (btn.dataset.confirming !== '1') {
@@ -1302,6 +1638,30 @@ $('btn-export').addEventListener('click', () => {
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
   a.download='velas-backup-'+today()+'.json'; a.click();
+});
+
+// ── EXPORTAR EXCEL (várias sheets) ────────────────────────
+$('btn-export-xlsx').addEventListener('click', () => {
+  if (typeof XLSX === 'undefined') { alert('XLSX library não carregada. Tenta recarregar a página.'); return; }
+  const wb = XLSX.utils.book_new();
+  const labels = {
+    inventory: 'Inventário', receitas: 'Receitas', stock: 'Stock',
+    orders: 'Vendas', expenses: 'Despesas', batches: 'Lotes'
+  };
+  Object.entries(labels).forEach(([k, label]) => {
+    const data = DB.get(k);
+    if (!data || !data.length) return;
+    // Limpa created_at e ordena chaves
+    const clean = data.map(item => {
+      const o = {...item};
+      delete o.created_at;
+      return o;
+    });
+    const ws = XLSX.utils.json_to_sheet(clean);
+    XLSX.utils.book_append_sheet(wb, ws, label);
+  });
+  if (wb.SheetNames.length === 0) { alert('Sem dados para exportar.'); return; }
+  XLSX.writeFile(wb, 'velas-dashboard-' + today() + '.xlsx');
 });
 $('import-file').addEventListener('change', function() {
   const f=this.files[0]; if(!f) return;
@@ -1333,11 +1693,13 @@ $('btn-clear-all').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────
 buildStars(0);
 calcUpdate();
+setupCalcPickers();
+updateInvCondFields();
 document.getElementById('btn-sync')?.addEventListener('click', () => {
   window._sbReady = false;
   loadAll(currentPage);
 });
-loadAll('dashboard');
+loadAll('dashboard').then(() => refreshAllDropdowns()).catch(() => refreshAllDropdowns());
 </script>
 </body>
 </html>
