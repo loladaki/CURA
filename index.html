@@ -613,29 +613,11 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
         <input type="checkbox" id="exp-to-inv"> 📦 Adicionar ao inventário (com nota "a caminho")
       </label>
       <div id="exp-inv-fields" style="display:none;margin-top:10px">
-        <div class="form-grid" style="grid-template-columns:1fr 1fr">
-          <div class="fg"><label>Nome do Material</label><input type="text" id="exp-inv-name" placeholder="ex: Cera de Soja"></div>
-          <div class="fg"><label>Tipo</label>
-            <select id="exp-inv-type">
-              <option value="cera">🕯️ Cera</option>
-              <option value="essencia">🌸 Essência</option>
-              <option value="pavio">🔥 Pavio</option>
-              <option value="recipiente">🫙 Recipiente</option>
-              <option value="autocolante">🏷️ Autocolante</option>
-              <option value="embalagem">📦 Embalagem</option>
-              <option value="corante">🎨 Corante</option>
-              <option value="aditivo">⚗️ Aditivo</option>
-              <option value="outro">📌 Outro</option>
-            </select>
-          </div>
-          <div class="fg"><label>Unidade</label>
-            <select id="exp-inv-unit">
-              <option value="kg">kg</option><option value="g">g</option>
-              <option value="L">L</option><option value="ml">ml</option>
-              <option value="un">unidade(s)</option>
-            </select>
-          </div>
-          <div class="fg"><label>Quantidade</label><input type="number" id="exp-inv-qty" placeholder="0" step="0.001"></div>
+        <div id="exp-inv-list"></div>
+        <button class="btn btn-ghost btn-sm" type="button" id="btn-add-inv-row">+ Adicionar outro item</button>
+        <div style="margin-top:8px;font-size:.78rem;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span>Soma dos itens: <b id="exp-inv-sum" style="color:var(--p)">€0,00</b></span>
+          <span>Valor da despesa: <b id="exp-inv-amt">€0,00</b></span>
         </div>
       </div>
     </div>
@@ -1387,22 +1369,87 @@ function renderExpenses() {
     <td><button class="btn btn-ed btn-sm" data-action="edit-exp" data-id="${e.id}">✏️</button> <button class="btn btn-del btn-sm" data-action="del" data-key="expenses" data-id="${e.id}">🗑️</button></td>
   </tr>`).join('')+`<tr style="background:var(--bg2)"><td colspan="3" class="tr bold">Total filtrado:</td><td class="tr bold" style="color:var(--err)">${eur(total)}</td><td colspan="2"></td></tr>`;
 }
+// ── EXP → INVENTÁRIO: lista dinâmica de itens ────────────
+function addExpInvRow(data) {
+  data = data || {};
+  const list = $('exp-inv-list'); if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'exp-inv-row';
+  row.style.cssText = 'display:grid;grid-template-columns:1.5fr 1.2fr .8fr .8fr .9fr 32px;gap:6px;align-items:end;margin-bottom:8px;padding:8px;background:#fff;border:1px solid var(--border);border-radius:7px';
+  row.innerHTML = `
+    <div class="fg"><label style="font-size:.65rem">Nome</label><input type="text" class="ei-name" placeholder="ex: Lavanda 100ml" value="${data.name||''}"></div>
+    <div class="fg"><label style="font-size:.65rem">Tipo</label>
+      <select class="ei-type">
+        <option value="essencia">🌸 Essência</option>
+        <option value="cera">🕯️ Cera</option>
+        <option value="pavio">🔥 Pavio</option>
+        <option value="recipiente">🫙 Recipiente</option>
+        <option value="autocolante">🏷️ Autocolante</option>
+        <option value="embalagem">📦 Embalagem</option>
+        <option value="cimento">🪨 Cimento</option>
+        <option value="gesso">⬜ Gesso</option>
+        <option value="areia">🟡 Areia</option>
+        <option value="corante">🎨 Corante</option>
+        <option value="aditivo">⚗️ Aditivo</option>
+        <option value="outro">📌 Outro</option>
+      </select>
+    </div>
+    <div class="fg"><label style="font-size:.65rem">Unid.</label>
+      <select class="ei-unit">
+        <option value="kg">kg</option>
+        <option value="g">g</option>
+        <option value="L">L</option>
+        <option value="ml">ml</option>
+        <option value="un">un</option>
+      </select>
+    </div>
+    <div class="fg"><label style="font-size:.65rem">Qtd.</label><input type="number" class="ei-qty" step="0.001" min="0" placeholder="0" value="${data.qty||''}"></div>
+    <div class="fg"><label style="font-size:.65rem">€/un</label><input type="number" class="ei-price" step="0.01" min="0" placeholder="0.00" value="${data.price||''}"></div>
+    <button class="btn btn-del btn-sm" type="button" data-action="exp-inv-rm" title="Remover" style="height:32px;padding:0;width:32px">✕</button>
+  `;
+  if (data.type) row.querySelector('.ei-type').value = data.type;
+  if (data.unit) row.querySelector('.ei-unit').value = data.unit;
+  // Recalcula soma quando algum valor muda
+  row.querySelectorAll('input, select').forEach(el => el.addEventListener('input', recomputeExpInvSum));
+  list.appendChild(row);
+  recomputeExpInvSum();
+}
+
+function recomputeExpInvSum() {
+  let total = 0;
+  document.querySelectorAll('.exp-inv-row').forEach(r => {
+    total += num(r.querySelector('.ei-qty').value) * num(r.querySelector('.ei-price').value);
+  });
+  const el = $('exp-inv-sum'); if (el) el.textContent = eur(total);
+  const amtEl = $('exp-inv-amt'); if (amtEl) amtEl.textContent = eur(num($('exp-amount').value));
+}
+
+function clearExpInvRows() {
+  const list = $('exp-inv-list'); if (list) list.innerHTML = '';
+}
+
 $('btn-add-exp').addEventListener('click', () => {
   $('exp-modal-title').textContent='Registar Despesa'; $('exp-id').value='';
   $('exp-date').value=today(); $('exp-cat').value='materias-primas';
   $('exp-desc').value=''; $('exp-amount').value=''; $('exp-vendor').value=''; $('exp-notes').value='';
   $('exp-to-inv').checked = false; $('exp-inv-fields').style.display = 'none';
-  $('exp-inv-name').value = ''; $('exp-inv-qty').value = '';
+  clearExpInvRows();
   openModal('exp-modal');
 });
 
-// Mostra/esconde campos de inventário no modal de despesas
+// Mostra/esconde campos de inventário e adiciona linha automaticamente
 $('exp-to-inv').addEventListener('change', () => {
   $('exp-inv-fields').style.display = $('exp-to-inv').checked ? 'block' : 'none';
-  if ($('exp-to-inv').checked && !$('exp-inv-name').value) {
-    $('exp-inv-name').value = $('exp-desc').value;
+  if ($('exp-to-inv').checked && !document.querySelector('.exp-inv-row')) {
+    addExpInvRow({ name: $('exp-desc').value });
   }
 });
+
+// Botão "+ Adicionar outro item"
+$('btn-add-inv-row').addEventListener('click', () => addExpInvRow());
+
+// Atualiza o resumo quando o valor da despesa muda
+$('exp-amount').addEventListener('input', recomputeExpInvSum);
 
 $('btn-save-exp').addEventListener('click', () => {
   const desc=$('exp-desc').value.trim(); if(!desc){alert('Descrição obrigatória');return;}
@@ -1411,21 +1458,28 @@ $('btn-save-exp').addEventListener('click', () => {
     amount:num($('exp-amount').value),vendor:$('exp-vendor').value.trim(),notes:$('exp-notes').value.trim()};
   if(id){const idx=expenses.findIndex(x=>x.id===id);expenses[idx]=obj;}else expenses.push(obj);
   DB.set('expenses',expenses);
-  // Se o checkbox estiver marcado, adiciona também ao inventário com status "a caminho"
+
+  // Adiciona TODAS as linhas do inventário
   if (!id && $('exp-to-inv').checked) {
-    const invName = $('exp-inv-name').value.trim() || desc;
-    const invQty = num($('exp-inv-qty').value);
-    if (invName) {
+    const rows = Array.from(document.querySelectorAll('.exp-inv-row'));
+    const validRows = rows.filter(r => r.querySelector('.ei-name').value.trim());
+    if (validRows.length > 0) {
       const invItems = DB.get('inventory');
-      const invType = $('exp-inv-type').value;
-      const newItem = {
-        id: DB.id(), name: invName, type: invType, unit: $('exp-inv-unit').value,
-        qty: invQty, price: invQty > 0 ? num($('exp-amount').value) / invQty : 0,
-        min: 0, supplier: $('exp-vendor').value.trim(), notes: 'Comprado em ' + $('exp-date').value,
-        status: 'a_caminho'
-      };
-      if (invType === 'cera') { newItem.density = 0.80; }
-      invItems.push(newItem);
+      validRows.forEach(r => {
+        const type = r.querySelector('.ei-type').value;
+        const newItem = {
+          id: DB.id(),
+          name: r.querySelector('.ei-name').value.trim(),
+          type, unit: r.querySelector('.ei-unit').value,
+          qty: num(r.querySelector('.ei-qty').value),
+          price: num(r.querySelector('.ei-price').value),
+          min: 0, supplier: $('exp-vendor').value.trim(),
+          notes: 'Comprado em ' + $('exp-date').value,
+          status: 'a_caminho'
+        };
+        if (type === 'cera') newItem.density = 0.80;
+        invItems.push(newItem);
+      });
       DB.set('inventory', invItems);
       refreshAllDropdowns();
     }
@@ -1754,6 +1808,9 @@ function doAction(action, id, key, btn) {
     } else if (action === 'inv-arrived') {
       var items = DB.get('inventory'); var idx = items.findIndex(function(x){return x.id===id;});
       if (idx >= 0) { items[idx].status = 'em_stock'; DB.set('inventory', items); renderInventory(); }
+    } else if (action === 'exp-inv-rm') {
+      var rowEl = btn.closest('.exp-inv-row');
+      if (rowEl) { rowEl.remove(); recomputeExpInvSum(); }
     } else if (action === 'edit-stock') {
       var i = DB.get('stock').find(function(x){return x.id===id;}); if(!i) return;
       $('stock-modal-title').textContent='Editar Vela';
