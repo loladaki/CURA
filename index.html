@@ -235,11 +235,63 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       </div>
     </div>
   </div>
-  <div class="box" style="margin-top:4px">
+
+  <!-- ── CALCULADORA DE COPOS (Cimento/Gesso/Areia) ── -->
+  <div class="box" style="margin-top:14px;border-color:var(--p)">
+    <h3>🫙 Calculadora de Copos (Cimento · Gesso · Areia · Água)</h3>
+    <p style="font-size:.78rem;color:var(--muted);margin-bottom:10px">Calcula quanto material precisas e o custo por copo. Escolhe os materiais do inventário para preço automático.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fg"><label>Nome do Lote</label><input type="text" id="cup-name" placeholder="ex: Copos Cinza — Maio"></div>
+          <div class="fg"><label>Nº de Copos</label><input type="number" id="cup-qty" value="10" min="1"></div>
+        </div>
+        <div class="mat-pick">
+          <h4>📦 Materiais (do Inventário)</h4>
+          <div class="form-grid" style="grid-template-columns:1fr 1fr">
+            <div class="fg"><label>🪨 Cimento</label><select id="cup-pick-cim"><option value="">— escolher —</option></select></div>
+            <div class="fg"><label>⬜ Gesso</label><select id="cup-pick-ges"><option value="">— escolher —</option></select></div>
+            <div class="fg"><label>🟡 Areia</label><select id="cup-pick-are"><option value="">— escolher —</option></select></div>
+            <div class="fg"><label>🔲 Molde (€/copo)</label><input type="number" id="cup-mold" value="0" step="0.01"></div>
+          </div>
+        </div>
+        <h4 style="font-size:.82rem;font-weight:600;margin:10px 0 6px">📝 Receita por Copo</h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fg"><label>Cimento (g/copo)</label><input type="number" id="cup-cim-g" value="0" step="1" min="0"></div>
+          <div class="fg"><label>Gesso (g/copo)</label><input type="number" id="cup-ges-g" value="0" step="1" min="0"></div>
+          <div class="fg"><label>Areia (g/copo)</label><input type="number" id="cup-are-g" value="0" step="1" min="0"></div>
+          <div class="fg"><label>Água (ml/copo)</label><input type="number" id="cup-water" value="0" step="1" min="0"></div>
+        </div>
+        <h4 style="font-size:.82rem;font-weight:600;margin:10px 0 6px">💶 Preços €/kg <span style="font-weight:400;color:var(--p)">← preenchidos do inventário</span></h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="fg"><label>Cimento €/kg</label><input type="number" id="cup-cim-p" value="0.30" step="0.01" min="0"></div>
+          <div class="fg"><label>Gesso €/kg</label><input type="number" id="cup-ges-p" value="0.60" step="0.01" min="0"></div>
+          <div class="fg"><label>Areia €/kg</label><input type="number" id="cup-are-p" value="0.10" step="0.01" min="0"></div>
+        </div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
+          <div class="fg"><label>Outros Fixos (€)</label><input type="number" id="cup-other" value="0" step="0.01" min="0"></div>
+          <div class="fg"><label>Margem de Lucro (%)</label><input type="number" id="cup-margin" value="50" min="0" step="1"></div>
+        </div>
+        <div class="modal-ftr" style="margin-top:14px">
+          <button class="btn btn-ghost" id="btn-cup-reset">Limpar</button>
+          <button class="btn btn-p" id="btn-cup-save">💾 Guardar Lote</button>
+        </div>
+      </div>
+      <div>
+        <div class="calc-res"><h3>📋 Resultados</h3><div class="calc-grid" id="cup-grid"></div></div>
+        <div class="box" style="margin-top:14px">
+          <h3>📊 Distribuição de Custos</h3>
+          <div class="chart-wrap" style="height:180px"><canvas id="chart-cup-pie"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="box" style="margin-top:14px">
     <h3>📁 Lotes Guardados</h3>
     <div class="tbl-wrap"><table><thead><tr>
-      <th>Nome</th><th>Data</th><th>Velas</th><th class="tr">Cera</th>
-      <th class="tr">Essência</th><th class="tr">Custo Total</th><th class="tr">Custo/Vela</th><th class="tr">PVP Sug.</th><th></th>
+      <th>Nome</th><th>Data</th><th>Tipo</th><th class="tr">Qtd</th>
+      <th class="tr">Material</th><th class="tr">Custo Total</th><th class="tr">Custo/Un</th><th class="tr">PVP Sug.</th><th></th>
     </tr></thead><tbody id="batch-tbody"></tbody></table></div>
   </div>
 </div>
@@ -834,7 +886,7 @@ function renderPage(pg) {
   const fn = {
     dashboard: renderDashboard,
     inventario: renderInventory,
-    calculadora: () => { renderBatches(); calcUpdate(); },
+    calculadora: () => { renderBatches(); calcUpdate(); cupCalcUpdate(); refreshAllDropdowns(); },
     receitas: renderReceitas,
     stock: () => { renderStockCards(); renderStock(); },
     vendas: () => { renderSalesCards(); renderOrders(); },
@@ -1400,6 +1452,10 @@ function refreshAllDropdowns() {
   fillInvDropdown('rec-pick-frag', 'essencia');
   fillInvDropdown('rec-pick-cont', 'recipiente');
   fillInvDropdown('rec-pick-wick', 'pavio');
+  // Calculadora de copos
+  fillInvDropdown('cup-pick-cim', 'cimento');
+  fillInvDropdown('cup-pick-ges', 'gesso');
+  fillInvDropdown('cup-pick-are', 'areia');
   // Stock from recipe dropdown
   const rs = $('stock-pick-rec');
   if (rs) {
@@ -1496,6 +1552,104 @@ $('btn-calc-reset').addEventListener('click', () => {
   $('c-wick').value=0.10; $('c-label').value=0.08; $('c-other').value=0; $('c-margin').value=40;
   $('c-name').value=''; calcUpdate();
 });
+
+// ── CALCULADORA DE COPOS (Cimento/Gesso/Areia/Água) ─────
+function cupCalcUpdate() {
+  const qty = num($('cup-qty')?.value);
+  const cimG = num($('cup-cim-g')?.value), gesG = num($('cup-ges-g')?.value);
+  const areG = num($('cup-are-g')?.value), waterMl = num($('cup-water')?.value);
+  const cimP = num($('cup-cim-p')?.value), gesP = num($('cup-ges-p')?.value), areP = num($('cup-are-p')?.value);
+  const mold = num($('cup-mold')?.value), other = num($('cup-other')?.value);
+  const margin = num($('cup-margin')?.value);
+
+  // Total necessário (em kg / L)
+  const totalCimKg = qty * cimG / 1000;
+  const totalGesKg = qty * gesG / 1000;
+  const totalAreKg = qty * areG / 1000;
+  const totalWaterL = qty * waterMl / 1000;
+
+  // Custos
+  const cimCost = totalCimKg * cimP;
+  const gesCost = totalGesKg * gesP;
+  const areCost = totalAreKg * areP;
+  const moldCost = qty * mold;
+  const totalCost = cimCost + gesCost + areCost + moldCost + other;
+  const cpc = qty > 0 ? totalCost / qty : 0;
+  const pvp = cpc * (1 + margin/100);
+  const weightPerCup = cimG + gesG + areG; // peso de material seco/copo
+
+  window._cupData = { qty, cimG, gesG, areG, waterMl, cimP, gesP, areP, mold, other, margin,
+    totalCimKg, totalGesKg, totalAreKg, totalWaterL, cimCost, gesCost, areCost, moldCost,
+    totalCost, cpc, pvp, weightPerCup };
+
+  const grid = $('cup-grid'); if (!grid) return;
+  grid.innerHTML = `
+    <div class="ci"><div class="ci-lbl">Cimento total</div><div class="ci-val">${fmt(totalCimKg, 2)} kg</div></div>
+    <div class="ci"><div class="ci-lbl">Gesso total</div><div class="ci-val">${fmt(totalGesKg, 2)} kg</div></div>
+    <div class="ci"><div class="ci-lbl">Areia total</div><div class="ci-val">${fmt(totalAreKg, 2)} kg</div></div>
+    <div class="ci"><div class="ci-lbl">Água total</div><div class="ci-val">${fmt(totalWaterL, 2)} L</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Cimento</div><div class="ci-val">${eur(cimCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Gesso</div><div class="ci-val">${eur(gesCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Areia</div><div class="ci-val">${eur(areCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Moldes + Outros</div><div class="ci-val">${eur(moldCost + other)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">💶 Custo Total</div><div class="ci-val">${eur(totalCost)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">💰 Custo/Copo</div><div class="ci-val">${eur(cpc)}</div></div>
+    <div class="ci hi"><div class="ci-lbl">🏷️ PVP Sugerido</div><div class="ci-val">${eur(pvp)}</div></div>
+  `;
+  makeChart('chart-cup-pie', {
+    type: 'doughnut',
+    data: { labels:['Cimento','Gesso','Areia','Moldes','Outros'],
+      datasets:[{data:[cimCost,gesCost,areCost,moldCost,other].map(v=>+v.toFixed(2)),backgroundColor:PAL,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}
+  });
+}
+
+const cupInputIds = ['cup-qty','cup-cim-g','cup-ges-g','cup-are-g','cup-water','cup-cim-p','cup-ges-p','cup-are-p','cup-mold','cup-other','cup-margin'];
+cupInputIds.forEach(id => { const el=$(id); if(el) el.addEventListener('input', cupCalcUpdate); });
+
+// Pickers do inventário para a calculadora de copos
+function setupCupPickers() {
+  [['cup-pick-cim','cup-cim-p','cimento'],['cup-pick-ges','cup-ges-p','gesso'],['cup-pick-are','cup-are-p','areia']].forEach(([pickId, priceId, type]) => {
+    const sel = $(pickId); if (!sel) return;
+    sel.addEventListener('change', () => {
+      const item = DB.get('inventory').find(x => x.id === sel.value);
+      if (item && item.price) {
+        // Converte preço para €/kg
+        const pricePerKg = item.unit === 'kg' ? item.price : (item.unit === 'g' ? item.price * 1000 : item.price);
+        $(priceId).value = pricePerKg.toFixed(2);
+        cupCalcUpdate();
+      }
+    });
+  });
+}
+
+$('btn-cup-reset').addEventListener('click', () => {
+  $('cup-name').value=''; $('cup-qty').value=10;
+  $('cup-cim-g').value=0; $('cup-ges-g').value=0; $('cup-are-g').value=0; $('cup-water').value=0;
+  $('cup-cim-p').value=0.30; $('cup-ges-p').value=0.60; $('cup-are-p').value=0.10;
+  $('cup-mold').value=0; $('cup-other').value=0; $('cup-margin').value=50;
+  ['cup-pick-cim','cup-pick-ges','cup-pick-are'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  cupCalcUpdate();
+});
+
+$('btn-cup-save').addEventListener('click', () => {
+  const d = window._cupData; if (!d || d.qty < 1) { alert('Calcula primeiro'); return; }
+  const name = $('cup-name').value.trim() || 'Copos — ' + new Date().toLocaleDateString('pt-PT');
+  DB.set('batches', [...DB.get('batches'), {
+    id: DB.id(), name, date: today(),
+    qty: d.qty, weight: d.weightPerCup,
+    waxKg: 0, fragG: 0,            // não aplicável a copos
+    waxCost: d.cimCost,            // reaproveita campo: custo do "cimento"
+    fragCost: d.gesCost,           // custo do "gesso"
+    contCost: d.areCost,           // custo da "areia"
+    wickCost: 0, lblCost: 0,
+    other: d.moldCost + d.other,
+    totalCost: d.totalCost, cpc: d.cpc, pvp: d.pvp,
+    margin: d.margin, kind: 'copos'  // flag para distinguir
+  }]);
+  renderBatches();
+  alert('Lote de copos guardado!');
+});
 $('btn-calc-save').addEventListener('click', () => {
   const d=window._cd; if(!d){alert('Calcula primeiro');return;}
   const name=$('c-name').value.trim()||'Lote '+new Date().toLocaleDateString('pt-PT');
@@ -1506,12 +1660,22 @@ function renderBatches() {
   const b=DB.get('batches');
   const tbody=$('batch-tbody'); if(!tbody) return;
   if(!b.length){tbody.innerHTML=`<tr><td colspan="9"><div class="empty"><div class="empty-ico">🧮</div><p>Sem lotes guardados</p></div></td></tr>`;return;}
-  tbody.innerHTML=[...b].reverse().map(b=>`<tr>
-    <td class="bold">${b.name}</td><td>${fmtDate(b.date)}</td><td class="tc">${b.qty}</td>
-    <td class="tr">${fmt(b.waxKg)} kg</td><td class="tr">${fmt(b.fragG)} g</td>
-    <td class="tr bold">${eur(b.totalCost)}</td><td class="tr">${eur(b.cpc)}</td><td class="tr">${eur(b.pvp)}</td>
-    <td><button class="btn btn-del btn-sm" data-del="batches" data-id="${b.id}">🗑️</button></td>
-  </tr>`).join('');
+  tbody.innerHTML=[...b].reverse().map(b=>{
+    const isCopos = b.kind === 'copos';
+    const tipo = isCopos
+      ? '<span class="badge b-blue">🫙 Copos</span>'
+      : '<span class="badge b-orange">🕯️ Velas</span>';
+    const material = isCopos
+      ? `${fmt((b.waxCost||0)+(b.fragCost||0)+(b.contCost||0),2)} € em mat.`
+      : `${fmt(b.waxKg||0,2)} kg cera · ${fmt(b.fragG||0,1)} g ess.`;
+    return `<tr>
+      <td class="bold">${b.name}</td><td>${fmtDate(b.date)}</td>
+      <td>${tipo}</td><td class="tc">${b.qty}</td>
+      <td class="tr" style="font-size:.75rem">${material}</td>
+      <td class="tr bold">${eur(b.totalCost)}</td><td class="tr">${eur(b.cpc)}</td><td class="tr">${eur(b.pvp)}</td>
+      <td><button class="btn btn-del btn-sm" data-action="del" data-key="batches" data-id="${b.id}">🗑️</button></td>
+    </tr>`;
+  }).join('');
 }
 
 // ── ANÁLISES ──────────────────────────────────────────────
@@ -1693,7 +1857,9 @@ $('btn-clear-all').addEventListener('click', () => {
 // ── INIT ──────────────────────────────────────────────────
 buildStars(0);
 calcUpdate();
+cupCalcUpdate();
 setupCalcPickers();
+setupCupPickers();
 updateInvCondFields();
 document.getElementById('btn-sync')?.addEventListener('click', () => {
   window._sbReady = false;
