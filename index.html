@@ -845,7 +845,7 @@ const eur = n => '€' + Number(n || 0).toFixed(2).replace('.', ',');
 const num = n => Number(n) || 0;
 const today = () => new Date().toISOString().slice(0, 10);
 const fmtDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-PT') : '—';
-const fmt = (n, d = 2) => Number(n || 0).toLocaleString('pt-PT', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmt = (n, d = 2) => Number(n || 0).toLocaleString('pt-PT', { minimumFractionDigits: 0, maximumFractionDigits: d });
 
 const TYPES = {
   cera:'🕯️ Cera', essencia:'🌸 Essência', pavio:'🔥 Pavio',
