@@ -669,12 +669,25 @@ async function sbGet(tbl) {
   } catch(e) { clearTimeout(timer); throw e; }
 }
 async function sbUpsert(tbl, row) {
-  const r = await fetch(`${SB_URL}/${tbl}`, {
-    method: 'POST',
-    headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(row)
-  });
-  if (!r.ok) { const txt = await r.text(); throw new Error(`[${tbl}] upsert ${r.status}: ${txt}`); }
+  let body = { ...row };
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const r = await fetch(`${SB_URL}/${tbl}`, {
+      method: 'POST',
+      headers: { ...SB_H, 'Prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) return;
+    const txt = await r.text();
+    // Se uma coluna não existe na BD, remove-a e tenta de novo
+    const m = txt.match(/Could not find the '([^']+)' column/);
+    if (m && body[m[1]] !== undefined) {
+      console.warn(`[${tbl}] coluna '${m[1]}' em falta no Supabase, a ignorar (corre o supabase-migration-v2.sql para adicionar)`);
+      delete body[m[1]];
+      continue;
+    }
+    throw new Error(`[${tbl}] upsert ${r.status}: ${txt}`);
+  }
+  throw new Error(`[${tbl}] upsert falhou após várias tentativas`);
 }
 async function sbDelete(tbl, id) {
   const r = await fetch(`${SB_URL}/${tbl}?id=eq.${encodeURIComponent(id)}`, {
