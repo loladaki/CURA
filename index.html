@@ -723,6 +723,14 @@ function lsSave() { LS_KEYS.forEach(k => { try { localStorage.setItem('velas_'+k
 function lsLoad() { LS_KEYS.forEach(k => { try { CACHE[k] = JSON.parse(localStorage.getItem('velas_'+k)||'[]'); } catch { CACHE[k]=[]; } }); }
 
 const CACHE = {};
+window._pending = 0;  // contador de alterações por sincronizar
+
+function updateSyncStatus() {
+  const p = window._pending || 0;
+  if (p === 0) sbStatus('✅ Sincronizado', 'var(--ok)');
+  else sbStatus(`⏳ A sincronizar (${p}) ...`, '#e8a030');
+}
+
 const DB = {
   get(k) { return CACHE[k] || []; },
   set(k, v) {
@@ -730,27 +738,30 @@ const DB = {
     CACHE[k] = v;
     try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
     const tbl = TBL[k]; if (!tbl) return;
+
+    // Calcula o que precisa de ser sincronizado
+    const toUpsert = v.filter(item => {
+      const prev = old.find(x => x.id === item.id);
+      return !prev || JSON.stringify(prev) !== JSON.stringify(item);
+    });
+    const toDelete = old.filter(item => !v.find(x => x.id === item.id));
+    const total = toUpsert.length + toDelete.length;
+    if (total === 0) return;
+    window._pending += total;
+    updateSyncStatus();
+
+    // Faz cada operação INDEPENDENTEMENTE (uma falha não trava as outras)
     (async () => {
-      try {
-        if (v.length === 0) {
-          await sbDeleteAll(tbl);
-        } else {
-          // upsert itens novos ou modificados
-          for (const item of v) {
-            const prev = old.find(x => x.id === item.id);
-            if (!prev || JSON.stringify(prev) !== JSON.stringify(item)) {
-              await sbUpsert(tbl, toRow(k, item));
-            }
-          }
-          // apagar itens removidos
-          for (const item of old) {
-            if (!v.find(x => x.id === item.id)) await sbDelete(tbl, item.id);
-          }
-        }
-        sbStatus('✅ Supabase ligado', 'var(--ok)');
-      } catch(e) {
-        console.error('SB sync error:', e.message);
-        sbStatus('❌ Erro: ' + e.message.slice(0, 60), '#e05252');
+      for (const item of toDelete) {
+        try { await sbDelete(tbl, item.id); window._pending--; updateSyncStatus(); }
+        catch(e) { console.warn(`[${tbl}] delete falhou`, item.id, e.message); }
+      }
+      for (const item of toUpsert) {
+        try { await sbUpsert(tbl, toRow(k, item)); window._pending--; updateSyncStatus(); }
+        catch(e) { console.warn(`[${tbl}] upsert falhou`, item.id, e.message); }
+      }
+      if (window._pending > 0) {
+        sbStatus(`⚠️ ${window._pending} item(s) não sincronizado(s) — recarrega quando tiveres net`, '#e05252');
       }
     })();
   },
@@ -758,7 +769,13 @@ const DB = {
     CACHE[k] = v;
     try { localStorage.setItem('velas_'+k, JSON.stringify(v)); } catch {}
     const tbl = TBL[k]; if (!tbl || !v.length) return;
-    (async () => { for (const obj of v) { try { await sbUpsert(tbl, toRow(k, obj)); } catch {} } })();
+    window._pending += v.length;
+    updateSyncStatus();
+    (async () => {
+      for (const obj of v) {
+        try { await sbUpsert(tbl, toRow(k, obj)); window._pending--; updateSyncStatus(); } catch {}
+      }
+    })();
   },
   id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 };
@@ -781,18 +798,19 @@ async function loadAll(pg) {
   // 2. Tenta ligar ao Supabase em segundo plano
   const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
   let erros = 0;
-  const toSync = [];
+  const toPush = [];
 
   results.forEach((res, i) => {
     const { tbl, k } = TABLES[i];
     if (res.status === 'fulfilled') {
       const sbData = res.value.map(r => fromRow(k, r));
       const localData = CACHE[k] || [];
-      if (sbData.length > 0) {
-        CACHE[k] = sbData;
-      } else if (localData.length > 0) {
-        toSync.push({ tbl, k });
-      }
+      const sbIds = new Set(sbData.map(x => x.id));
+      // Itens que estão SÓ no localStorage (ainda não chegaram ao Supabase) → guardar para empurrar
+      const localOnly = localData.filter(x => !sbIds.has(x.id));
+      // MERGE: dados do Supabase + itens locais que ainda não foram sincronizados
+      CACHE[k] = [...sbData, ...localOnly];
+      if (localOnly.length > 0) toPush.push({ tbl, k, items: localOnly });
     } else {
       erros++;
       console.warn('SB falhou:', TABLES[i].tbl, res.reason?.message);
@@ -802,22 +820,22 @@ async function loadAll(pg) {
   lsSave();
   renderPage(pg || currentPage);
 
-  if (erros === 0) sbStatus('✅ Supabase ligado', 'var(--ok)');
+  if (erros === 0 && toPush.length === 0) sbStatus('✅ Sincronizado', 'var(--ok)');
   else if (erros === TABLES.length) sbStatus('⚠️ Offline — dados locais', 'var(--warn)');
-  else sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
+  else if (erros > 0) sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
 
-  // 3. Sincroniza dados locais para o Supabase se este estava vazio
-  if (toSync.length > 0) {
+  // 3. Empurra itens que existem só localmente (recupera de syncs anteriores que falharam)
+  if (toPush.length > 0) {
+    window._pending += toPush.reduce((s, x) => s + x.items.length, 0);
+    updateSyncStatus();
     (async () => {
-      let ok = 0, fail = 0;
-      for (const { tbl, k } of toSync) {
-        for (const item of (CACHE[k] || [])) {
-          try { await sbUpsert(tbl, toRow(k, item)); ok++; }
-          catch(e) { fail++; console.warn('sync-up falhou:', e.message); }
+      for (const { tbl, k, items } of toPush) {
+        for (const item of items) {
+          try { await sbUpsert(tbl, toRow(k, item)); window._pending--; updateSyncStatus(); }
+          catch(e) { console.warn('push falhou:', e.message); }
         }
       }
-      sbStatus(fail === 0 ? `✅ ${ok} item(s) sincronizado(s)` : `⚠️ Sync parcial (${fail} erro(s))`,
-               fail === 0 ? 'var(--ok)' : 'var(--warn)');
+      if (window._pending === 0) sbStatus('✅ Tudo sincronizado', 'var(--ok)');
     })();
   }
 }
@@ -1981,6 +1999,34 @@ document.getElementById('btn-sync')?.addEventListener('click', () => {
   loadAll(currentPage);
 });
 loadAll('dashboard').then(() => refreshAllDropdowns()).catch(() => refreshAllDropdowns());
+
+// ── AUTO-SYNC ──────────────────────────────────────────────
+// 1. Avisa se o utilizador tentar fechar a aba com alterações por sincronizar
+window.addEventListener('beforeunload', (e) => {
+  if ((window._pending || 0) > 0) {
+    const msg = `⚠️ Ainda há ${window._pending} alteração(ões) por sincronizar com o Supabase. Se fechares agora podes perder dados.`;
+    e.preventDefault();
+    e.returnValue = msg;
+    return msg;
+  }
+});
+
+// 2. Quando o utilizador volta à aba, re-sincroniza (apanha alterações de outro dispositivo + empurra pendentes)
+let _lastFocusSync = 0;
+window.addEventListener('focus', () => {
+  if (Date.now() - _lastFocusSync > 5000) {  // não martelar — espera 5s entre syncs
+    _lastFocusSync = Date.now();
+    loadAll(currentPage);
+  }
+});
+
+// 3. Sync periódico a cada 60s — empurra itens locais que falharam syncs anteriores
+setInterval(() => {
+  if ((window._pending || 0) > 0) {
+    console.log('Auto-sync: ' + window._pending + ' item(s) por sincronizar, a tentar...');
+    loadAll(currentPage);
+  }
+}, 60000);
 </script>
 </body>
 </html>
