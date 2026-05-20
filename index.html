@@ -170,6 +170,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
           <option value="molde">🔲 Molde</option>
           <option value="corante">🎨 Corante</option>
           <option value="aditivo">⚗️ Aditivo</option>
+          <option value="selante">🛡️ Selante</option>
           <option value="outro">📌 Outro</option>
         </select>
       </div>
@@ -448,6 +449,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
           <option value="molde">🔲 Molde</option>
           <option value="corante">🎨 Corante</option>
           <option value="aditivo">⚗️ Aditivo</option>
+          <option value="selante">🛡️ Selante</option>
           <option value="outro">📌 Outro</option>
         </select>
       </div>
@@ -946,7 +948,8 @@ const TYPES = {
   cera:'🕯️ Cera', essencia:'🌸 Essência', pavio:'🔥 Pavio',
   autocolante:'🏷️ Autocolante', recipiente:'🫙 Recipiente', embalagem:'📦 Embalagem',
   cimento:'🪨 Cimento', gesso:'⬜ Gesso', areia:'🟡 Areia',
-  molde:'🔲 Molde', corante:'🎨 Corante', aditivo:'⚗️ Aditivo', outro:'📌 Outro'
+  molde:'🔲 Molde', corante:'🎨 Corante', aditivo:'⚗️ Aditivo',
+  selante:'🛡️ Selante', outro:'📌 Outro'
 };
 const CAT_LABELS = { 'materias-primas':'Mat. Primas', embalagem:'Embalagem', marketing:'Marketing', transporte:'Transporte', equipamento:'Equipamento', outro:'Outro' };
 const CAT_COLORS = { 'materias-primas':'#c8792a', embalagem:'#5a8fd4', marketing:'#e05252', transporte:'#e8a030', equipamento:'#4a9e6b', outro:'#9b59b6' };
@@ -1525,6 +1528,7 @@ function addExpInvRow(data) {
         <option value="areia">🟡 Areia</option>
         <option value="corante">🎨 Corante</option>
         <option value="aditivo">⚗️ Aditivo</option>
+        <option value="selante">🛡️ Selante</option>
         <option value="outro">📌 Outro</option>
       </select>
     </div>
