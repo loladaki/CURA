@@ -395,6 +395,14 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     </div>
   </div>
   <div class="box">
+    <h3>🔄 Sincronização Manual (Supabase)</h3>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:12px">Por defeito o local ganha sempre. Estes botões só precisas se algo correr mesmo mal.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-p" id="btn-force-push">🔼 Forçar enviar TUDO para Supabase</button>
+      <button class="btn btn-del" id="btn-force-pull">🔽 Apagar local e puxar do Supabase</button>
+    </div>
+  </div>
+  <div class="box">
     <h3>🗑️ Limpar Dados</h3>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
       <button class="btn btn-del btn-sm" data-clear="inventory">Inventário</button>
@@ -722,7 +730,7 @@ const LS_KEYS = ['inventory','orders','stock','expenses','batches','receitas'];
 function lsSave() { LS_KEYS.forEach(k => { try { localStorage.setItem('velas_'+k, JSON.stringify(CACHE[k]||[])); } catch {} }); }
 function lsLoad() { LS_KEYS.forEach(k => { try { CACHE[k] = JSON.parse(localStorage.getItem('velas_'+k)||'[]'); } catch { CACHE[k]=[]; } }); }
 
-// ── Dirty tracking — itens alterados localmente que ainda não foram confirmados no Supabase
+// ── Dirty tracking — itens alterados localmente que precisam de ir para o Supabase
 function getDirty() {
   try { return JSON.parse(localStorage.getItem('velas_dirty') || '{}'); } catch { return {}; }
 }
@@ -742,8 +750,26 @@ function clearDirty(k, id) {
     saveDirty(d);
   }
 }
-function isDirty(k, id) {
-  const d = getDirty(); return (d[k] || []).includes(id);
+
+// ── Deleted tracking — itens apagados localmente que precisam de ser apagados no Supabase
+function getDeleted() {
+  try { return JSON.parse(localStorage.getItem('velas_deleted') || '{}'); } catch { return {}; }
+}
+function saveDeletedList(d) {
+  try { localStorage.setItem('velas_deleted', JSON.stringify(d)); } catch {}
+}
+function markDeleted(k, id) {
+  const d = getDeleted();
+  d[k] = d[k] || [];
+  if (!d[k].includes(id)) { d[k].push(id); saveDeletedList(d); }
+}
+function clearDeleted(k, id) {
+  const d = getDeleted();
+  if (d[k]) {
+    d[k] = d[k].filter(x => x !== id);
+    if (d[k].length === 0) delete d[k];
+    saveDeletedList(d);
+  }
 }
 
 const CACHE = {};
@@ -771,21 +797,26 @@ const DB = {
     const toDelete = old.filter(item => !v.find(x => x.id === item.id));
     const total = toUpsert.length + toDelete.length;
     if (total === 0) return;
-    // Marca como "dirty" — protege estas versões locais até o upsert confirmar
+    // Marca pendências para protegerem de syncs futuros
     toUpsert.forEach(item => markDirty(k, item.id));
+    toDelete.forEach(item => markDeleted(k, item.id));
     window._pending += total;
     updateSyncStatus();
 
     // Faz cada operação INDEPENDENTEMENTE (uma falha não trava as outras)
     (async () => {
       for (const item of toDelete) {
-        try { await sbDelete(tbl, item.id); window._pending--; updateSyncStatus(); }
+        try {
+          await sbDelete(tbl, item.id);
+          clearDeleted(k, item.id);
+          window._pending--; updateSyncStatus();
+        }
         catch(e) { console.warn(`[${tbl}] delete falhou`, item.id, e.message); }
       }
       for (const item of toUpsert) {
         try {
           await sbUpsert(tbl, toRow(k, item));
-          clearDirty(k, item.id);  // confirmado no Supabase → já não é dirty
+          clearDirty(k, item.id);
           window._pending--; updateSyncStatus();
         }
         catch(e) { console.warn(`[${tbl}] upsert falhou`, item.id, e.message); }
@@ -830,23 +861,34 @@ async function loadAll(pg) {
   let erros = 0;
   const toPush = [];
 
-  const dirty = getDirty();
+  const deleted = getDeleted();
   results.forEach((res, i) => {
     const { tbl, k } = TABLES[i];
     if (res.status === 'fulfilled') {
       const sbData = res.value.map(r => fromRow(k, r));
       const localData = CACHE[k] || [];
-      const dirtyIds = new Set(dirty[k] || []);
-      // 1) Filtra Supabase: ignora versões antigas de itens que ainda estão a sincronizar localmente
-      const sbClean = sbData.filter(x => !dirtyIds.has(x.id));
-      const sbIds = new Set(sbClean.map(x => x.id));
-      // 2) Mantém todos os itens locais que não estão no Supabase limpo (inclui dirty + nunca sincronizados)
-      const localOnly = localData.filter(x => !sbIds.has(x.id));
-      // 3) MERGE final
-      CACHE[k] = [...sbClean, ...localOnly];
-      // 4) Empurra para o Supabase os itens locais que não conseguiu obter de lá (recuperação de falhas)
-      const needPush = localOnly.filter(x => !dirtyIds.has(x.id));
+      const localIds = new Set(localData.map(x => x.id));
+      const deletedIds = new Set(deleted[k] || []);
+      // ╔═══════════════════════════════════════════════════════════╗
+      // ║  LOCAL GANHA SEMPRE — os teus dados nunca são sobrescritos ║
+      // ╚═══════════════════════════════════════════════════════════╝
+      // Só puxa do Supabase itens que NÃO tens cá e que NÃO apagaste
+      const sbOnly = sbData.filter(x => !localIds.has(x.id) && !deletedIds.has(x.id));
+      CACHE[k] = [...localData, ...sbOnly];
+      // Empurra: itens locais que diferem do Supabase (ou não existem lá)
+      const sbById = new Map(sbData.map(x => [x.id, x]));
+      const needPush = localData.filter(x => {
+        const sb = sbById.get(x.id);
+        if (!sb) return true;
+        // Compara em formato Supabase, ignorando created_at
+        const a = JSON.stringify(toRow(k, x));
+        const b = JSON.stringify(toRow(k, sb));
+        return a !== b;
+      });
       if (needPush.length > 0) toPush.push({ tbl, k, items: needPush });
+      // Empurra os deletes pendentes
+      const needDelete = sbData.filter(x => deletedIds.has(x.id));
+      if (needDelete.length > 0) toPush.push({ tbl, k, deletes: needDelete });
     } else {
       erros++;
       console.warn('SB falhou:', TABLES[i].tbl, res.reason?.message);
@@ -860,15 +902,31 @@ async function loadAll(pg) {
   else if (erros === TABLES.length) sbStatus('⚠️ Offline — dados locais', 'var(--warn)');
   else if (erros > 0) sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
 
-  // 3. Empurra itens que existem só localmente (recupera de syncs anteriores que falharam)
+  // 3. Empurra alterações pendentes (upserts + deletes)
   if (toPush.length > 0) {
-    window._pending += toPush.reduce((s, x) => s + x.items.length, 0);
+    const totalOps = toPush.reduce((s, x) => s + (x.items?.length || 0) + (x.deletes?.length || 0), 0);
+    window._pending += totalOps;
     updateSyncStatus();
     (async () => {
-      for (const { tbl, k, items } of toPush) {
-        for (const item of items) {
-          try { await sbUpsert(tbl, toRow(k, item)); window._pending--; updateSyncStatus(); }
-          catch(e) { console.warn('push falhou:', e.message); }
+      for (const job of toPush) {
+        const { tbl, k, items, deletes } = job;
+        if (items) {
+          for (const item of items) {
+            try {
+              await sbUpsert(tbl, toRow(k, item));
+              clearDirty(k, item.id);
+              window._pending--; updateSyncStatus();
+            } catch(e) { console.warn('push falhou:', e.message); }
+          }
+        }
+        if (deletes) {
+          for (const item of deletes) {
+            try {
+              await sbDelete(tbl, item.id);
+              clearDeleted(k, item.id);
+              window._pending--; updateSyncStatus();
+            } catch(e) { console.warn('delete push falhou:', e.message); }
+          }
         }
       }
       if (window._pending === 0) sbStatus('✅ Tudo sincronizado', 'var(--ok)');
@@ -1971,6 +2029,41 @@ $('btn-export').addEventListener('click', () => {
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
   a.download='velas-backup-'+today()+'.json'; a.click();
+});
+
+// ── FORÇAR PUSH: empurra TUDO o que está local para o Supabase ─
+$('btn-force-push').addEventListener('click', async () => {
+  if (!confirm('Vai sobrescrever no Supabase todos os itens com os teus valores locais. Continuar?')) return;
+  let total = 0, ok = 0, fail = 0;
+  for (const { tbl, k } of TABLES) {
+    const items = DB.get(k);
+    total += items.length;
+    for (const item of items) {
+      try { await sbUpsert(tbl, toRow(k, item)); ok++; clearDirty(k, item.id); }
+      catch (e) { fail++; console.error(`Push falhou: ${tbl}/${item.id}`, e.message); }
+    }
+  }
+  sbStatus(`Push completo: ${ok}/${total} ok, ${fail} falhas`, fail === 0 ? 'var(--ok)' : 'var(--warn)');
+  alert(`✅ Push: ${ok} de ${total} item(s) enviados.${fail > 0 ? '\n⚠️ ' + fail + ' falharam (vê o console).' : ''}`);
+});
+
+// ── FORÇAR PULL: apaga local e puxa tudo do Supabase ─────
+$('btn-force-pull').addEventListener('click', async () => {
+  if (!confirm('⚠️ ATENÇÃO: vai APAGAR todos os dados locais e substituir pelos do Supabase. Tens a certeza?')) return;
+  if (!confirm('Mesmo? Esta acção não pode ser desfeita.')) return;
+  // Limpa localStorage e dirty/deleted
+  LS_KEYS.forEach(k => { try { localStorage.removeItem('velas_'+k); CACHE[k] = []; } catch {} });
+  try { localStorage.removeItem('velas_dirty'); } catch {}
+  try { localStorage.removeItem('velas_deleted'); } catch {}
+  const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
+  results.forEach((res, i) => {
+    const { k } = TABLES[i];
+    if (res.status === 'fulfilled') CACHE[k] = res.value.map(r => fromRow(k, r));
+  });
+  lsSave();
+  renderPage(currentPage);
+  refreshAllDropdowns();
+  alert('✅ Dados locais substituídos pelos do Supabase.');
 });
 
 // ── EXPORTAR EXCEL (várias sheets) ────────────────────────
