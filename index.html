@@ -785,6 +785,35 @@ function clearDeleted(k, id) {
   }
 }
 
+// ── Confirmed tracking — IDs que já foram vistos no Supabase (para detectar deletes remotos)
+function getConfirmed() {
+  try { return JSON.parse(localStorage.getItem('velas_confirmed') || '{}'); } catch { return {}; }
+}
+function saveConfirmed(c) {
+  try { localStorage.setItem('velas_confirmed', JSON.stringify(c)); } catch {}
+}
+function markConfirmed(k, id) {
+  const c = getConfirmed();
+  c[k] = c[k] || [];
+  if (!c[k].includes(id)) { c[k].push(id); saveConfirmed(c); }
+}
+function clearConfirmed(k, id) {
+  const c = getConfirmed();
+  if (c[k]) {
+    c[k] = c[k].filter(x => x !== id);
+    if (c[k].length === 0) delete c[k];
+    saveConfirmed(c);
+  }
+}
+function isConfirmed(k, id) {
+  const c = getConfirmed(); return (c[k] || []).includes(id);
+}
+
+// Modal aberto? Pausa o sync durante edições
+function isModalOpen() {
+  return document.querySelector('.overlay.open') !== null;
+}
+
 const CACHE = {};
 window._pending = 0;  // contador de alterações por sincronizar
 
@@ -858,16 +887,15 @@ const DB = {
       let hadFailure = false;
       for (const item of toDelete) {
         const success = await syncWithRetry(() => sbDelete(tbl, item.id));
-        if (success) { clearDeleted(k, item.id); window._pending--; updateSyncStatus(); }
+        if (success) { clearDeleted(k, item.id); clearConfirmed(k, item.id); window._pending--; updateSyncStatus(); }
         else hadFailure = true;
       }
       for (const item of toUpsert) {
         const success = await syncWithRetry(() => sbUpsert(tbl, toRow(k, item)));
-        if (success) { clearDirty(k, item.id); window._pending--; updateSyncStatus(); }
+        if (success) { clearDirty(k, item.id); markConfirmed(k, item.id); window._pending--; updateSyncStatus(); }
         else hadFailure = true;
       }
       if (hadFailure) {
-        // Agenda nova tentativa em 5s
         scheduleRetry();
       }
     })();
@@ -896,88 +924,91 @@ const TABLES = [
   { tbl:'receitas',   k:'receitas'  },
 ];
 
-async function loadAll(pg) {
-  // 1. Mostra dados locais imediatamente — sem esperar pelo Supabase
-  lsLoad();
-  renderPage(pg || currentPage);
-  sbStatus('⏳ A ligar ao Supabase...', 'var(--pl)');
+async function loadAll(pg, opts) {
+  opts = opts || {};
+  // ⏸️ Não interrompe o utilizador a meio de uma edição
+  if (isModalOpen() && !opts.force) {
+    sbStatus('⏸️ Sync pausado (modal aberto)', '#e8a030');
+    return;
+  }
 
-  // 2. Tenta ligar ao Supabase em segundo plano
+  // 1. Mostra o que tens local imediatamente
+  if (!opts.skipLocalRender) {
+    lsLoad();
+    renderPage(pg || currentPage);
+  }
+  sbStatus('⏳ A sincronizar...', 'var(--pl)');
+
+  // 2. EMPURRAR PRIMEIRO — alterações locais e deletes vão para o Supabase ANTES de puxar
+  const dirty = getDirty(), deleted = getDeleted();
+  for (const { tbl, k } of TABLES) {
+    // Push de upserts pendentes
+    for (const id of (dirty[k] || []).slice()) {
+      const item = (CACHE[k] || []).find(x => x.id === id);
+      if (item) {
+        try { await sbUpsert(tbl, toRow(k, item)); clearDirty(k, id); markConfirmed(k, id); }
+        catch(e) { console.warn(`push falhou ${tbl}/${id}:`, e.message); }
+      } else { clearDirty(k, id); }  // item já não existe local — limpa
+    }
+    // Push de deletes pendentes
+    for (const id of (deleted[k] || []).slice()) {
+      try { await sbDelete(tbl, id); clearDeleted(k, id); clearConfirmed(k, id); }
+      catch(e) { console.warn(`delete falhou ${tbl}/${id}:`, e.message); }
+    }
+  }
+
+  // 3. PUXAR — agora vai buscar o estado mais recente do Supabase
   const results = await Promise.allSettled(TABLES.map(({tbl}) => sbGet(tbl)));
   let erros = 0;
-  const toPush = [];
 
-  const deleted = getDeleted();
   results.forEach((res, i) => {
     const { tbl, k } = TABLES[i];
-    if (res.status === 'fulfilled') {
-      const sbData = res.value.map(r => fromRow(k, r));
-      const localData = CACHE[k] || [];
-      const localIds = new Set(localData.map(x => x.id));
-      const deletedIds = new Set(deleted[k] || []);
-      // ╔═══════════════════════════════════════════════════════════╗
-      // ║  LOCAL GANHA SEMPRE — os teus dados nunca são sobrescritos ║
-      // ╚═══════════════════════════════════════════════════════════╝
-      // Só puxa do Supabase itens que NÃO tens cá e que NÃO apagaste
-      const sbOnly = sbData.filter(x => !localIds.has(x.id) && !deletedIds.has(x.id));
-      CACHE[k] = [...localData, ...sbOnly];
-      // Empurra: itens locais que diferem do Supabase (ou não existem lá)
-      const sbById = new Map(sbData.map(x => [x.id, x]));
-      const needPush = localData.filter(x => {
-        const sb = sbById.get(x.id);
-        if (!sb) return true;
-        // Compara em formato Supabase, ignorando created_at
-        const a = JSON.stringify(toRow(k, x));
-        const b = JSON.stringify(toRow(k, sb));
-        return a !== b;
-      });
-      if (needPush.length > 0) toPush.push({ tbl, k, items: needPush });
-      // Empurra os deletes pendentes
-      const needDelete = sbData.filter(x => deletedIds.has(x.id));
-      if (needDelete.length > 0) toPush.push({ tbl, k, deletes: needDelete });
-    } else {
-      erros++;
-      console.warn('SB falhou:', TABLES[i].tbl, res.reason?.message);
+    if (res.status !== 'fulfilled') {
+      erros++; console.warn('SB falhou:', tbl, res.reason?.message);
+      return;
     }
+    const sbData = res.value.map(r => fromRow(k, r));
+    const localData = CACHE[k] || [];
+    const sbIds = new Set(sbData.map(x => x.id));
+    const dirtyIds = new Set((getDirty()[k]) || []);
+    const deletedIds = new Set((getDeleted()[k]) || []);
+
+    // ✅ Marca tudo o que vem do Supabase como confirmado (já existe lá)
+    sbData.forEach(x => markConfirmed(k, x.id));
+
+    // MERGE: Supabase é a fonte de verdade, EXCEPTO itens dirty (ainda a sincronizar)
+    const merged = sbData
+      .filter(x => !deletedIds.has(x.id))  // ignora items que tu apagaste mas ainda não chegou ao SB
+      .map(sb => {
+        if (dirtyIds.has(sb.id)) {
+          const local = localData.find(x => x.id === sb.id);
+          return local || sb;
+        }
+        return sb;
+      });
+
+    // Items SÓ locais (não estão no Supabase):
+    //   - se nunca foram confirmados (nunca chegaram lá) → mantém, vai ser empurrado
+    //   - se foram confirmados antes e agora desapareceram → o teu amigo apagou → REMOVE
+    //   - se estão dirty → mantém (vais empurrar)
+    const localOnly = localData.filter(x => !sbIds.has(x.id) && !deletedIds.has(x.id));
+    const toKeepLocal = localOnly.filter(x => {
+      if (dirtyIds.has(x.id)) return true;  // a meio de sync
+      if (!isConfirmed(k, x.id)) return true;  // nunca foi para o Supabase, é novo
+      // foi confirmado antes mas já não está lá → foi apagado por outro user
+      clearConfirmed(k, x.id);
+      return false;
+    });
+
+    CACHE[k] = [...merged, ...toKeepLocal];
   });
 
   lsSave();
   renderPage(pg || currentPage);
 
-  if (erros === 0 && toPush.length === 0) sbStatus('✅ Sincronizado', 'var(--ok)');
-  else if (erros === TABLES.length) sbStatus('⚠️ Offline — dados locais', 'var(--warn)');
-  else if (erros > 0) sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
-
-  // 3. Empurra alterações pendentes (upserts + deletes)
-  if (toPush.length > 0) {
-    const totalOps = toPush.reduce((s, x) => s + (x.items?.length || 0) + (x.deletes?.length || 0), 0);
-    window._pending += totalOps;
-    updateSyncStatus();
-    (async () => {
-      for (const job of toPush) {
-        const { tbl, k, items, deletes } = job;
-        if (items) {
-          for (const item of items) {
-            try {
-              await sbUpsert(tbl, toRow(k, item));
-              clearDirty(k, item.id);
-              window._pending--; updateSyncStatus();
-            } catch(e) { console.warn('push falhou:', e.message); }
-          }
-        }
-        if (deletes) {
-          for (const item of deletes) {
-            try {
-              await sbDelete(tbl, item.id);
-              clearDeleted(k, item.id);
-              window._pending--; updateSyncStatus();
-            } catch(e) { console.warn('delete push falhou:', e.message); }
-          }
-        }
-      }
-      if (window._pending === 0) sbStatus('✅ Tudo sincronizado', 'var(--ok)');
-    })();
-  }
+  if (erros === 0) sbStatus(window._pending > 0 ? `⏳ A guardar (${window._pending})...` : '✅ Sincronizado', window._pending > 0 ? '#e8a030' : 'var(--ok)');
+  else if (erros === TABLES.length) sbStatus('⚠️ Offline — alterações guardadas localmente', 'var(--warn)');
+  else sbStatus(`⚠️ ${erros} tabela(s) em falha`, 'var(--warn)');
 }
 
 // ── UTILS ─────────────────────────────────────────────────
@@ -2194,8 +2225,8 @@ document.getElementById('btn-sync')?.addEventListener('click', () => {
 });
 loadAll('dashboard').then(() => refreshAllDropdowns()).catch(() => refreshAllDropdowns());
 
-// ── AUTO-SYNC ──────────────────────────────────────────────
-// Recalcula o contador de pendentes a partir do localStorage (cobre refresh / fechar browser)
+// ── AUTO-SYNC BIDIRECCIONAL ──────────────────────────────────
+// Recalcula o contador de pendentes (cobre refresh / fechar browser)
 recountPending();
 
 // 1. Avisa antes de fechar se houver pendentes
@@ -2206,7 +2237,7 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// 2. Quando voltas à aba (mais fiável que 'focus' em mobile)
+// 2. Quando voltas à aba
 let _lastVisSync = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - _lastVisSync > 3000) {
@@ -2224,13 +2255,13 @@ window.addEventListener('offline', () => {
   sbStatus('📴 Sem internet — alterações guardadas localmente', '#e8a030');
 });
 
-// 4. Sync periódico a cada 15s se houver pendentes (era 60s)
+// 4. POLLING — puxa do Supabase de 8 em 8s (apanha alterações do teu amigo automaticamente)
 setInterval(() => {
-  if ((window._pending || 0) > 0 && navigator.onLine !== false) {
-    console.log('[auto-sync] ' + window._pending + ' pendente(s), a tentar...');
-    loadAll(currentPage);
-  }
-}, 15000);
+  if (navigator.onLine === false) return;
+  if (isModalOpen()) return;  // não interrompe edições
+  if (document.visibilityState !== 'visible') return;  // poupa se a aba estiver minimizada
+  loadAll(currentPage, { skipLocalRender: true });
+}, 8000);
 </script>
 </body>
 </html>
