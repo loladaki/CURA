@@ -256,6 +256,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
             <div class="fg"><label>🪨 Cimento</label><select id="cup-pick-cim"><option value="">— escolher —</option></select></div>
             <div class="fg"><label>⬜ Gesso</label><select id="cup-pick-ges"><option value="">— escolher —</option></select></div>
             <div class="fg"><label>🟡 Areia</label><select id="cup-pick-are"><option value="">— escolher —</option></select></div>
+            <div class="fg"><label>🛡️ Selante</label><select id="cup-pick-sel"><option value="">— escolher —</option></select></div>
             <div class="fg"><label>🔲 Molde (€/copo)</label><input type="number" id="cup-mold" value="0" step="0.01"></div>
           </div>
         </div>
@@ -265,12 +266,16 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
           <div class="fg"><label>Gesso (g/copo)</label><input type="number" id="cup-ges-g" value="0" step="1" min="0"></div>
           <div class="fg"><label>Areia (g/copo)</label><input type="number" id="cup-are-g" value="0" step="1" min="0"></div>
           <div class="fg"><label>Água (ml/copo)</label><input type="number" id="cup-water" value="0" step="1" min="0"></div>
+          <div class="fg"><label>Selante (g/copo)</label><input type="number" id="cup-sel-g" value="0" step="0.1" min="0"></div>
+          <div class="fg"><label>⏱️ Tempo (min/copo)</label><input type="number" id="cup-min" value="0" step="0.5" min="0"></div>
         </div>
-        <h4 style="font-size:.82rem;font-weight:600;margin:10px 0 6px">💶 Preços €/kg <span style="font-weight:400;color:var(--p)">← preenchidos do inventário</span></h4>
-        <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr">
+        <h4 style="font-size:.82rem;font-weight:600;margin:10px 0 6px">💶 Preços <span style="font-weight:400;color:var(--p)">← preenchidos do inventário</span></h4>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr">
           <div class="fg"><label>Cimento €/kg</label><input type="number" id="cup-cim-p" value="0.30" step="0.01" min="0"></div>
           <div class="fg"><label>Gesso €/kg</label><input type="number" id="cup-ges-p" value="0.60" step="0.01" min="0"></div>
           <div class="fg"><label>Areia €/kg</label><input type="number" id="cup-are-p" value="0.10" step="0.01" min="0"></div>
+          <div class="fg"><label>Selante €/kg</label><input type="number" id="cup-sel-p" value="0" step="0.01" min="0"></div>
+          <div class="fg"><label>👤 Mão de Obra €/hora</label><input type="number" id="cup-hourly" value="0" step="0.5" min="0"></div>
         </div>
         <div class="form-grid" style="grid-template-columns:1fr 1fr">
           <div class="fg"><label>Outros Fixos (€)</label><input type="number" id="cup-other" value="0" step="0.01" min="0"></div>
@@ -1726,6 +1731,7 @@ function refreshAllDropdowns() {
   fillInvDropdown('cup-pick-cim', 'cimento');
   fillInvDropdown('cup-pick-ges', 'gesso');
   fillInvDropdown('cup-pick-are', 'areia');
+  fillInvDropdown('cup-pick-sel', 'selante');
   // Stock from recipe dropdown
   const rs = $('stock-pick-rec');
   if (rs) {
@@ -1823,44 +1829,59 @@ $('btn-calc-reset').addEventListener('click', () => {
   $('c-name').value=''; calcUpdate();
 });
 
-// ── CALCULADORA DE COPOS (Cimento/Gesso/Areia/Água) ─────
+// ── CALCULADORA DE COPOS (Cimento/Gesso/Areia/Selante/Água + Mão de Obra) ─────
 function cupCalcUpdate() {
   const qty = num($('cup-qty')?.value);
   const cimG = num($('cup-cim-g')?.value), gesG = num($('cup-ges-g')?.value);
-  const areG = num($('cup-are-g')?.value), waterMl = num($('cup-water')?.value);
-  const cimP = num($('cup-cim-p')?.value), gesP = num($('cup-ges-p')?.value), areP = num($('cup-are-p')?.value);
+  const areG = num($('cup-are-g')?.value), selG = num($('cup-sel-g')?.value);
+  const waterMl = num($('cup-water')?.value);
+  const minPerCup = num($('cup-min')?.value), hourly = num($('cup-hourly')?.value);
+  const cimP = num($('cup-cim-p')?.value), gesP = num($('cup-ges-p')?.value);
+  const areP = num($('cup-are-p')?.value), selP = num($('cup-sel-p')?.value);
   const mold = num($('cup-mold')?.value), other = num($('cup-other')?.value);
   const margin = num($('cup-margin')?.value);
 
-  // Total necessário (em kg / L)
+  // Total necessário
   const totalCimKg = qty * cimG / 1000;
   const totalGesKg = qty * gesG / 1000;
   const totalAreKg = qty * areG / 1000;
+  const totalSelKg = qty * selG / 1000;
   const totalWaterL = qty * waterMl / 1000;
+  const totalMin = qty * minPerCup;
+  const totalHours = totalMin / 60;
 
   // Custos
   const cimCost = totalCimKg * cimP;
   const gesCost = totalGesKg * gesP;
   const areCost = totalAreKg * areP;
+  const selCost = totalSelKg * selP;
   const moldCost = qty * mold;
-  const totalCost = cimCost + gesCost + areCost + moldCost + other;
+  const laborCost = totalHours * hourly;
+  const totalCost = cimCost + gesCost + areCost + selCost + moldCost + laborCost + other;
   const cpc = qty > 0 ? totalCost / qty : 0;
   const pvp = cpc * (1 + margin/100);
-  const weightPerCup = cimG + gesG + areG; // peso de material seco/copo
+  const weightPerCup = cimG + gesG + areG + selG;
 
-  window._cupData = { qty, cimG, gesG, areG, waterMl, cimP, gesP, areP, mold, other, margin,
-    totalCimKg, totalGesKg, totalAreKg, totalWaterL, cimCost, gesCost, areCost, moldCost,
+  window._cupData = { qty, cimG, gesG, areG, selG, waterMl, minPerCup, hourly,
+    cimP, gesP, areP, selP, mold, other, margin,
+    totalCimKg, totalGesKg, totalAreKg, totalSelKg, totalWaterL, totalMin,
+    cimCost, gesCost, areCost, selCost, moldCost, laborCost,
     totalCost, cpc, pvp, weightPerCup };
 
+  const fmtTime = m => m >= 60 ? `${fmt(m/60,1)}h` : `${fmt(m,0)} min`;
   const grid = $('cup-grid'); if (!grid) return;
   grid.innerHTML = `
     <div class="ci"><div class="ci-lbl">Cimento total</div><div class="ci-val">${fmt(totalCimKg, 2)} kg</div></div>
     <div class="ci"><div class="ci-lbl">Gesso total</div><div class="ci-val">${fmt(totalGesKg, 2)} kg</div></div>
     <div class="ci"><div class="ci-lbl">Areia total</div><div class="ci-val">${fmt(totalAreKg, 2)} kg</div></div>
+    <div class="ci"><div class="ci-lbl">Selante total</div><div class="ci-val">${fmt(totalSelKg, 3)} kg</div></div>
     <div class="ci"><div class="ci-lbl">Água total</div><div class="ci-val">${fmt(totalWaterL, 2)} L</div></div>
+    <div class="ci"><div class="ci-lbl">⏱️ Tempo total</div><div class="ci-val">${fmtTime(totalMin)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Cimento</div><div class="ci-val">${eur(cimCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Gesso</div><div class="ci-val">${eur(gesCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Areia</div><div class="ci-val">${eur(areCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">Custo Selante</div><div class="ci-val">${eur(selCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">👤 Mão de Obra</div><div class="ci-val">${eur(laborCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Moldes + Outros</div><div class="ci-val">${eur(moldCost + other)}</div></div>
     <div class="ci hi"><div class="ci-lbl">💶 Custo Total</div><div class="ci-val">${eur(totalCost)}</div></div>
     <div class="ci hi"><div class="ci-lbl">💰 Custo/Copo</div><div class="ci-val">${eur(cpc)}</div></div>
@@ -1868,23 +1889,22 @@ function cupCalcUpdate() {
   `;
   makeChart('chart-cup-pie', {
     type: 'doughnut',
-    data: { labels:['Cimento','Gesso','Areia','Moldes','Outros'],
-      datasets:[{data:[cimCost,gesCost,areCost,moldCost,other].map(v=>+v.toFixed(2)),backgroundColor:PAL,borderWidth:2}]},
+    data: { labels:['Cimento','Gesso','Areia','Selante','Mão Obra','Moldes','Outros'],
+      datasets:[{data:[cimCost,gesCost,areCost,selCost,laborCost,moldCost,other].map(v=>+v.toFixed(2)),backgroundColor:PAL,borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}
   });
 }
 
-const cupInputIds = ['cup-qty','cup-cim-g','cup-ges-g','cup-are-g','cup-water','cup-cim-p','cup-ges-p','cup-are-p','cup-mold','cup-other','cup-margin'];
+const cupInputIds = ['cup-qty','cup-cim-g','cup-ges-g','cup-are-g','cup-sel-g','cup-water','cup-min','cup-hourly','cup-cim-p','cup-ges-p','cup-are-p','cup-sel-p','cup-mold','cup-other','cup-margin'];
 cupInputIds.forEach(id => { const el=$(id); if(el) el.addEventListener('input', cupCalcUpdate); });
 
 // Pickers do inventário para a calculadora de copos
 function setupCupPickers() {
-  [['cup-pick-cim','cup-cim-p','cimento'],['cup-pick-ges','cup-ges-p','gesso'],['cup-pick-are','cup-are-p','areia']].forEach(([pickId, priceId, type]) => {
+  [['cup-pick-cim','cup-cim-p','cimento'],['cup-pick-ges','cup-ges-p','gesso'],['cup-pick-are','cup-are-p','areia'],['cup-pick-sel','cup-sel-p','selante']].forEach(([pickId, priceId, type]) => {
     const sel = $(pickId); if (!sel) return;
     sel.addEventListener('change', () => {
       const item = DB.get('inventory').find(x => x.id === sel.value);
       if (item && item.price) {
-        // Converte preço para €/kg
         const pricePerKg = item.unit === 'kg' ? item.price : (item.unit === 'g' ? item.price * 1000 : item.price);
         $(priceId).value = pricePerKg.toFixed(2);
         cupCalcUpdate();
@@ -1895,10 +1915,11 @@ function setupCupPickers() {
 
 $('btn-cup-reset').addEventListener('click', () => {
   $('cup-name').value=''; $('cup-qty').value=10;
-  $('cup-cim-g').value=0; $('cup-ges-g').value=0; $('cup-are-g').value=0; $('cup-water').value=0;
-  $('cup-cim-p').value=0.30; $('cup-ges-p').value=0.60; $('cup-are-p').value=0.10;
+  $('cup-cim-g').value=0; $('cup-ges-g').value=0; $('cup-are-g').value=0; $('cup-sel-g').value=0; $('cup-water').value=0;
+  $('cup-min').value=0; $('cup-hourly').value=0;
+  $('cup-cim-p').value=0.30; $('cup-ges-p').value=0.60; $('cup-are-p').value=0.10; $('cup-sel-p').value=0;
   $('cup-mold').value=0; $('cup-other').value=0; $('cup-margin').value=50;
-  ['cup-pick-cim','cup-pick-ges','cup-pick-are'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  ['cup-pick-cim','cup-pick-ges','cup-pick-are','cup-pick-sel'].forEach(id => { const el=$(id); if(el) el.value=''; });
   cupCalcUpdate();
 });
 
@@ -1908,14 +1929,15 @@ $('btn-cup-save').addEventListener('click', () => {
   DB.set('batches', [...DB.get('batches'), {
     id: DB.id(), name, date: today(),
     qty: d.qty, weight: d.weightPerCup,
-    waxKg: 0, fragG: 0,            // não aplicável a copos
-    waxCost: d.cimCost,            // reaproveita campo: custo do "cimento"
-    fragCost: d.gesCost,           // custo do "gesso"
-    contCost: d.areCost,           // custo da "areia"
-    wickCost: 0, lblCost: 0,
+    waxKg: 0, fragG: 0,
+    waxCost: d.cimCost,           // cimento
+    fragCost: d.gesCost,          // gesso
+    contCost: d.areCost,          // areia
+    wickCost: d.selCost,          // selante
+    lblCost: d.laborCost,         // mão de obra
     other: d.moldCost + d.other,
     totalCost: d.totalCost, cpc: d.cpc, pvp: d.pvp,
-    margin: d.margin, kind: 'copos'  // flag para distinguir
+    margin: d.margin, kind: 'copos'
   }]);
   renderBatches();
   alert('Lote de copos guardado!');
