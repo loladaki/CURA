@@ -785,8 +785,45 @@ window._pending = 0;  // contador de alterações por sincronizar
 
 function updateSyncStatus() {
   const p = window._pending || 0;
-  if (p === 0) sbStatus('✅ Sincronizado', 'var(--ok)');
-  else sbStatus(`⏳ A sincronizar (${p}) ...`, '#e8a030');
+  if (p === 0) sbStatus('✅ Tudo guardado', 'var(--ok)');
+  else sbStatus(`⏳ A guardar (${p}) ...`, '#e8a030');
+}
+
+// Recalcula o nº de pendentes a partir do que está em dirty/deleted (após refresh, etc.)
+function recountPending() {
+  const dirty = getDirty(), del = getDeleted();
+  let n = 0;
+  Object.values(dirty).forEach(arr => n += (arr || []).length);
+  Object.values(del).forEach(arr => n += (arr || []).length);
+  window._pending = n;
+  updateSyncStatus();
+}
+
+// Tenta uma operação com retry e backoff exponencial (3 tentativas)
+async function syncWithRetry(opFn, maxAttempts) {
+  maxAttempts = maxAttempts || 3;
+  for (let i = 0; i < maxAttempts; i++) {
+    try { await opFn(); return true; }
+    catch(e) {
+      if (i === maxAttempts - 1) { console.warn('Sync falhou após', maxAttempts, 'tentativas:', e.message); return false; }
+      await new Promise(r => setTimeout(r, 500 * Math.pow(2, i)));  // 500ms, 1s, 2s
+    }
+  }
+  return false;
+}
+
+// Agenda uma re-tentativa de sync (debounced — só uma a correr de cada vez)
+let _retryScheduled = false;
+function scheduleRetry(delay) {
+  if (_retryScheduled) return;
+  _retryScheduled = true;
+  setTimeout(() => {
+    _retryScheduled = false;
+    if (window._pending > 0) {
+      console.log('[auto-retry] a tentar sync de', window._pending, 'item(s)');
+      loadAll(currentPage);
+    }
+  }, delay || 5000);
 }
 
 const DB = {
@@ -811,26 +848,22 @@ const DB = {
     window._pending += total;
     updateSyncStatus();
 
-    // Faz cada operação INDEPENDENTEMENTE (uma falha não trava as outras)
+    // Faz cada operação INDEPENDENTEMENTE com retry automático
     (async () => {
+      let hadFailure = false;
       for (const item of toDelete) {
-        try {
-          await sbDelete(tbl, item.id);
-          clearDeleted(k, item.id);
-          window._pending--; updateSyncStatus();
-        }
-        catch(e) { console.warn(`[${tbl}] delete falhou`, item.id, e.message); }
+        const success = await syncWithRetry(() => sbDelete(tbl, item.id));
+        if (success) { clearDeleted(k, item.id); window._pending--; updateSyncStatus(); }
+        else hadFailure = true;
       }
       for (const item of toUpsert) {
-        try {
-          await sbUpsert(tbl, toRow(k, item));
-          clearDirty(k, item.id);
-          window._pending--; updateSyncStatus();
-        }
-        catch(e) { console.warn(`[${tbl}] upsert falhou`, item.id, e.message); }
+        const success = await syncWithRetry(() => sbUpsert(tbl, toRow(k, item)));
+        if (success) { clearDirty(k, item.id); window._pending--; updateSyncStatus(); }
+        else hadFailure = true;
       }
-      if (window._pending > 0) {
-        sbStatus(`⚠️ ${window._pending} item(s) não sincronizado(s) — recarrega quando tiveres net`, '#e05252');
+      if (hadFailure) {
+        // Agenda nova tentativa em 5s
+        scheduleRetry();
       }
     })();
   },
@@ -2140,32 +2173,42 @@ document.getElementById('btn-sync')?.addEventListener('click', () => {
 loadAll('dashboard').then(() => refreshAllDropdowns()).catch(() => refreshAllDropdowns());
 
 // ── AUTO-SYNC ──────────────────────────────────────────────
-// 1. Avisa se o utilizador tentar fechar a aba com alterações por sincronizar
+// Recalcula o contador de pendentes a partir do localStorage (cobre refresh / fechar browser)
+recountPending();
+
+// 1. Avisa antes de fechar se houver pendentes
 window.addEventListener('beforeunload', (e) => {
   if ((window._pending || 0) > 0) {
-    const msg = `⚠️ Ainda há ${window._pending} alteração(ões) por sincronizar com o Supabase. Se fechares agora podes perder dados.`;
-    e.preventDefault();
-    e.returnValue = msg;
-    return msg;
+    const msg = `⚠️ Ainda há ${window._pending} alteração(ões) por sincronizar. Se sair agora podes perder.`;
+    e.preventDefault(); e.returnValue = msg; return msg;
   }
 });
 
-// 2. Quando o utilizador volta à aba, re-sincroniza (apanha alterações de outro dispositivo + empurra pendentes)
-let _lastFocusSync = 0;
-window.addEventListener('focus', () => {
-  if (Date.now() - _lastFocusSync > 5000) {  // não martelar — espera 5s entre syncs
-    _lastFocusSync = Date.now();
+// 2. Quando voltas à aba (mais fiável que 'focus' em mobile)
+let _lastVisSync = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - _lastVisSync > 3000) {
+    _lastVisSync = Date.now();
     loadAll(currentPage);
   }
 });
 
-// 3. Sync periódico a cada 60s — empurra itens locais que falharam syncs anteriores
+// 3. Quando a internet volta
+window.addEventListener('online', () => {
+  console.log('[online] internet de volta — a sincronizar');
+  loadAll(currentPage);
+});
+window.addEventListener('offline', () => {
+  sbStatus('📴 Sem internet — alterações guardadas localmente', '#e8a030');
+});
+
+// 4. Sync periódico a cada 15s se houver pendentes (era 60s)
 setInterval(() => {
-  if ((window._pending || 0) > 0) {
-    console.log('Auto-sync: ' + window._pending + ' item(s) por sincronizar, a tentar...');
+  if ((window._pending || 0) > 0 && navigator.onLine !== false) {
+    console.log('[auto-sync] ' + window._pending + ' pendente(s), a tentar...');
     loadAll(currentPage);
   }
-}, 60000);
+}, 15000);
 </script>
 </body>
 </html>
