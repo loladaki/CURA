@@ -267,7 +267,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
           <div class="fg"><label>Areia (g/copo)</label><input type="number" id="cup-are-g" value="0" step="1" min="0"></div>
           <div class="fg"><label>Água (ml/copo)</label><input type="number" id="cup-water" value="0" step="1" min="0"></div>
           <div class="fg"><label>Selante (g/copo)</label><input type="number" id="cup-sel-g" value="0" step="0.1" min="0"></div>
-          <div class="fg"><label>⏱️ Tempo (min/copo)</label><input type="number" id="cup-min" value="0" step="0.5" min="0"></div>
+          <div class="fg"><label>⏱️ Tempo TOTAL (min)</label><input type="number" id="cup-min" value="0" step="0.5" min="0"><span style="font-size:.65rem;color:var(--muted);margin-top:2px">para fazer todos os copos juntos</span></div>
         </div>
         <h4 style="font-size:.82rem;font-weight:600;margin:10px 0 6px">💶 Preços <span style="font-weight:400;color:var(--p)">← preenchidos do inventário</span></h4>
         <div class="form-grid" style="grid-template-columns:1fr 1fr">
@@ -1866,7 +1866,7 @@ function cupCalcUpdate() {
   const cimG = num($('cup-cim-g')?.value), gesG = num($('cup-ges-g')?.value);
   const areG = num($('cup-are-g')?.value), selG = num($('cup-sel-g')?.value);
   const waterMl = num($('cup-water')?.value);
-  const minPerCup = num($('cup-min')?.value), hourly = num($('cup-hourly')?.value);
+  const totalMin = num($('cup-min')?.value), hourly = num($('cup-hourly')?.value);
   const cimP = num($('cup-cim-p')?.value), gesP = num($('cup-ges-p')?.value);
   const areP = num($('cup-are-p')?.value), selP = num($('cup-sel-p')?.value);
   const mold = num($('cup-mold')?.value), other = num($('cup-other')?.value);
@@ -1878,8 +1878,8 @@ function cupCalcUpdate() {
   const totalAreKg = qty * areG / 1000;
   const totalSelKg = qty * selG / 1000;
   const totalWaterL = qty * waterMl / 1000;
-  const totalMin = qty * minPerCup;
   const totalHours = totalMin / 60;
+  const minPerCup = qty > 0 ? totalMin / qty : 0;
 
   // Custos
   const cimCost = totalCimKg * cimP;
@@ -1888,15 +1888,16 @@ function cupCalcUpdate() {
   const selCost = totalSelKg * selP;
   const moldCost = qty * mold;
   const laborCost = totalHours * hourly;
+  const laborPerCup = qty > 0 ? laborCost / qty : 0;
   const totalCost = cimCost + gesCost + areCost + selCost + moldCost + laborCost + other;
   const cpc = qty > 0 ? totalCost / qty : 0;
   const pvp = cpc * (1 + margin/100);
   const weightPerCup = cimG + gesG + areG + selG;
 
-  window._cupData = { qty, cimG, gesG, areG, selG, waterMl, minPerCup, hourly,
+  window._cupData = { qty, cimG, gesG, areG, selG, waterMl, totalMin, minPerCup, hourly,
     cimP, gesP, areP, selP, mold, other, margin,
-    totalCimKg, totalGesKg, totalAreKg, totalSelKg, totalWaterL, totalMin,
-    cimCost, gesCost, areCost, selCost, moldCost, laborCost,
+    totalCimKg, totalGesKg, totalAreKg, totalSelKg, totalWaterL,
+    cimCost, gesCost, areCost, selCost, moldCost, laborCost, laborPerCup,
     totalCost, cpc, pvp, weightPerCup };
 
   const fmtTime = m => m >= 60 ? `${fmt(m/60,1)}h` : `${fmt(m,0)} min`;
@@ -1907,12 +1908,13 @@ function cupCalcUpdate() {
     <div class="ci"><div class="ci-lbl">Areia total</div><div class="ci-val">${fmt(totalAreKg, 2)} kg</div></div>
     <div class="ci"><div class="ci-lbl">Selante total</div><div class="ci-val">${fmt(totalSelKg, 3)} kg</div></div>
     <div class="ci"><div class="ci-lbl">Água total</div><div class="ci-val">${fmt(totalWaterL, 2)} L</div></div>
-    <div class="ci"><div class="ci-lbl">⏱️ Tempo total</div><div class="ci-val">${fmtTime(totalMin)}</div></div>
+    <div class="ci"><div class="ci-lbl">⏱️ Tempo / copo</div><div class="ci-val">${fmt(minPerCup, 1)} min</div></div>
     <div class="ci"><div class="ci-lbl">Custo Cimento</div><div class="ci-val">${eur(cimCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Gesso</div><div class="ci-val">${eur(gesCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Areia</div><div class="ci-val">${eur(areCost)}</div></div>
     <div class="ci"><div class="ci-lbl">Custo Selante</div><div class="ci-val">${eur(selCost)}</div></div>
-    <div class="ci"><div class="ci-lbl">👤 Mão de Obra</div><div class="ci-val">${eur(laborCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">👤 Mão Obra total</div><div class="ci-val">${eur(laborCost)}</div></div>
+    <div class="ci"><div class="ci-lbl">👤 Mão Obra / copo</div><div class="ci-val">${eur(laborPerCup)}</div></div>
     <div class="ci"><div class="ci-lbl">Moldes + Outros</div><div class="ci-val">${eur(moldCost + other)}</div></div>
     <div class="ci hi"><div class="ci-lbl">💶 Custo Total</div><div class="ci-val">${eur(totalCost)}</div></div>
     <div class="ci hi"><div class="ci-lbl">💰 Custo/Copo</div><div class="ci-val">${eur(cpc)}</div></div>
