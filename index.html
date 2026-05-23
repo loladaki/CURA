@@ -481,6 +481,16 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
         <select id="inv-status">
           <option value="em_stock">✅ Em stock</option>
           <option value="a_caminho">🚚 A caminho</option>
+          <option value="a_curar">🕐 A curar</option>
+        </select>
+      </div>
+      <!-- Campos visíveis quando estado = a curar -->
+      <div class="fg" id="inv-cure-row" style="display:none"><label>Pronto a (data)</label><input type="date" id="inv-ready-at"></div>
+      <div class="fg" id="inv-cure-stage-row" style="display:none"><label>Fase</label>
+        <select id="inv-cure-stage">
+          <option value="">— (sem fase)</option>
+          <option value="pre_seal">🕐 Pré-selar (14 dias)</option>
+          <option value="post_seal">🛡️ Pós-selar (3 dias)</option>
         </select>
       </div>
       <!-- Campos condicionais por tipo -->
@@ -560,6 +570,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
       <div class="fg"><label>Quantidade *</label><input type="number" id="stock-qty" placeholder="0" min="0"></div>
       <div class="fg"><label>Preço de Custo (€)</label><input type="number" id="stock-cost" placeholder="0.00" step="0.01"></div>
       <div class="fg"><label>PVP (€)</label><input type="number" id="stock-pvp" placeholder="0.00" step="0.01"></div>
+      <div class="fg"><label>🕐 A curar até (opcional)</label><input type="date" id="stock-ready-at"><span style="font-size:.65rem;color:var(--muted);margin-top:2px">vazio = pronto a vender</span></div>
       <div class="fg" style="grid-column:1/-1"><label>Notas</label><textarea id="stock-notes" placeholder="Lote, observações..."></textarea></div>
     </div>
     <div class="modal-ftr">
@@ -1165,16 +1176,32 @@ function renderInventory() {
     const total = num(i.qty) * num(i.price);
     const low = num(i.min) > 0 && num(i.qty) <= num(i.min);
     const aCaminho = i.status === 'a_caminho';
+    const aCurar = i.status === 'a_curar';
+    const diasFalta = aCurar ? daysUntil(i.readyAt) : null;
     let extra = '';
     if (i.type === 'cera' && (i.meltTemp || i.density)) extra = `<div class="muted" style="font-size:.7rem">${i.meltTemp?`🌡️ ${i.meltTemp}°C`:''} ${i.density?`⚖️ ${i.density}g/ml`:''}</div>`;
     else if (i.type === 'essencia' && i.flashPoint) extra = `<div class="muted" style="font-size:.7rem">🔥 Flash: ${i.flashPoint}°C</div>`;
     else if (i.type === 'recipiente' && i.volume) extra = `<div class="muted" style="font-size:.7rem">📏 ${i.volume}ml</div>`;
+    if (aCurar) {
+      const stageLabel = i.cureStage === 'pre_seal' ? 'Pré-selar' : i.cureStage === 'post_seal' ? 'Pós-selar' : '';
+      extra += `<div style="font-size:.7rem;color:var(--info);margin-top:2px">🕐 ${stageLabel}${i.readyAt?` · pronto ${fmtDate(i.readyAt)}`:''}</div>`;
+    }
     let statusBadge;
     if (aCaminho) statusBadge = '<span class="badge b-blue">🚚 A caminho</span>';
+    else if (aCurar) {
+      if (diasFalta === null) statusBadge = '<span class="badge b-blue">🕐 A curar</span>';
+      else if (diasFalta > 0) statusBadge = `<span class="badge b-blue">🕐 ${diasFalta} dia${diasFalta!==1?'s':''}</span>`;
+      else statusBadge = '<span class="badge b-yellow">⚡ Pronto a avançar</span>';
+    }
     else if (low) statusBadge = '<span class="badge b-red">⚠️ Baixo</span>';
     else statusBadge = '<span class="badge b-green">✅ OK</span>';
-    const arrivedBtn = aCaminho ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46" data-action="inv-arrived" data-id="${i.id}" title="Marcar como chegado">📥</button>` : '';
-    return `<tr ${aCaminho?'style="opacity:.7"':''}>
+    let actionBtns = '';
+    if (aCaminho) actionBtns = `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46" data-action="inv-arrived" data-id="${i.id}" title="Marcar como chegado">📥</button>`;
+    if (aCurar) {
+      if (i.cureStage === 'pre_seal') actionBtns += `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e" data-action="inv-sealed" data-id="${i.id}" title="Marcar como selado (mais 3 dias)">🛡️</button>`;
+      actionBtns += `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46" data-action="inv-ready" data-id="${i.id}" title="Marcar como pronto">✅</button>`;
+    }
+    return `<tr ${(aCaminho||aCurar)?'style="opacity:.85"':''}>
       <td><div class="bold">${i.name}</div>${i.supplier ? `<div class="muted" style="font-size:.72rem">${i.supplier}</div>` : ''}${extra}</td>
       <td>${TYPES[i.type] || i.type}</td>
       <td>${i.unit}</td>
@@ -1184,7 +1211,7 @@ function renderInventory() {
       <td class="tc">${i.min > 0 ? fmt(i.min, 3) : '—'}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap">
-        ${arrivedBtn}
+        ${actionBtns}
         <button class="btn btn-ed btn-sm" data-action="edit-inv" data-id="${i.id}">✏️</button>
         <button class="btn btn-del btn-sm" data-action="del" data-key="inventory" data-id="${i.id}">🗑️</button>
       </td>
@@ -1202,6 +1229,26 @@ function updateInvCondFields() {
   });
 }
 $('inv-type').addEventListener('change', updateInvCondFields);
+
+// Mostra/esconde campos de cura quando estado = a_curar
+function updateInvCureFields() {
+  const showCure = $('inv-status').value === 'a_curar';
+  $('inv-cure-row').style.display = showCure ? 'flex' : 'none';
+  $('inv-cure-stage-row').style.display = showCure ? 'flex' : 'none';
+}
+$('inv-status').addEventListener('change', updateInvCureFields);
+
+// Helper: dias entre hoje e uma data ISO
+function daysUntil(isoDate) {
+  if (!isoDate) return null;
+  const target = new Date(isoDate + 'T00:00:00');
+  const now = new Date(); now.setHours(0,0,0,0);
+  return Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+}
+function addDays(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 // ── Sincroniza Qty ⇄ Total ⇄ Preço/Unidade ─────────────
 // O utilizador mete normalmente Qty + Total → calcula €/un.
@@ -1229,8 +1276,9 @@ $('btn-add-inv').addEventListener('click', () => {
   $('inv-qty').value = ''; $('inv-price').value = ''; $('inv-total-price').value = '';
   $('inv-min').value = ''; $('inv-supplier').value = ''; $('inv-notes').value = '';
   $('inv-status').value = 'em_stock';
+  $('inv-ready-at').value = ''; $('inv-cure-stage').value = '';
   $('inv-melt').value = ''; $('inv-density').value = '0.80'; $('inv-flash').value = ''; $('inv-volume').value = '';
-  updateInvCondFields();
+  updateInvCondFields(); updateInvCureFields();
   openModal('inv-modal');
 });
 
@@ -1239,10 +1287,15 @@ $('btn-save-inv').addEventListener('click', () => {
   if (!name) { alert('Nome obrigatório'); return; }
   const items = DB.get('inventory'), id = $('inv-id').value;
   const type = $('inv-type').value;
+  const status = $('inv-status').value;
   const obj = { id: id || DB.id(), name, type, unit: $('inv-unit').value,
     qty: num($('inv-qty').value), price: num($('inv-price').value),
     min: num($('inv-min').value), supplier: $('inv-supplier').value.trim(), notes: $('inv-notes').value.trim(),
-    status: $('inv-status').value };
+    status };
+  if (status === 'a_curar') {
+    obj.readyAt = $('inv-ready-at').value || null;
+    obj.cureStage = $('inv-cure-stage').value || null;
+  }
   if (type === 'cera') { obj.meltTemp = num($('inv-melt').value); obj.density = num($('inv-density').value) || 0.80; }
   if (type === 'essencia') { obj.flashPoint = num($('inv-flash').value); }
   if (type === 'recipiente') { obj.volume = num($('inv-volume').value); }
@@ -1427,14 +1480,24 @@ function renderStock() {
   tbody.innerHTML = items.map(i => {
     const mar = num(i.cost) > 0 ? (num(i.pvp) - num(i.cost)) / num(i.cost) * 100 : null;
     const zero = num(i.qty) === 0;
-    return `<tr>
-      <td class="bold">${i.name}</td><td>${i.frag||'—'}</td><td>${i.size||'—'}</td>
+    const curing = i.readyAt && daysUntil(i.readyAt) > 0;
+    const dias = curing ? daysUntil(i.readyAt) : null;
+    let statusBadge;
+    if (curing) statusBadge = `<span class="badge b-blue">🕐 ${dias} dia${dias!==1?'s':''}</span>`;
+    else if (zero) statusBadge = '<span class="badge b-red">Esgotado</span>';
+    else if (num(i.qty) < 5) statusBadge = '<span class="badge b-yellow">Baixo</span>';
+    else statusBadge = '<span class="badge b-green">OK</span>';
+    const readyBtn = curing ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46" data-action="stock-ready" data-id="${i.id}" title="Marcar como pronto">✅</button>` : '';
+    return `<tr ${curing?'style="opacity:.85"':''}>
+      <td><div class="bold">${i.name}</div>${curing?`<div class="muted" style="font-size:.7rem;color:var(--info)">🕐 pronto ${fmtDate(i.readyAt)}</div>`:''}</td>
+      <td>${i.frag||'—'}</td><td>${i.size||'—'}</td>
       <td class="tr bold" style="${zero?'color:var(--err)':''}">${num(i.qty)}</td>
       <td class="tr">${i.cost?eur(i.cost):'—'}</td><td class="tr bold">${i.pvp?eur(i.pvp):'—'}</td>
       <td class="tr">${eur(num(i.qty)*num(i.pvp))}</td>
       <td class="tr">${mar!==null?`<span class="badge ${mar>=30?'b-green':mar>=15?'b-yellow':'b-red'}">${fmt(mar,0)}%</span>`:'—'}</td>
-      <td>${zero?'<span class="badge b-red">Esgotado</span>':num(i.qty)<5?'<span class="badge b-yellow">Baixo</span>':'<span class="badge b-green">OK</span>'}</td>
+      <td>${statusBadge}</td>
       <td style="white-space:nowrap">
+        ${readyBtn}
         <button class="btn btn-ed btn-sm" data-action="edit-stock" data-id="${i.id}">✏️</button>
         <button class="btn btn-del btn-sm" data-action="del" data-key="stock" data-id="${i.id}">🗑️</button>
       </td>
@@ -1444,7 +1507,7 @@ function renderStock() {
 
 $('btn-add-stock').addEventListener('click', () => {
   $('stock-modal-title').textContent = 'Adicionar Vela';
-  ['stock-id','stock-name','stock-frag','stock-size','stock-qty','stock-cost','stock-pvp','stock-notes'].forEach(id => $(id).value = '');
+  ['stock-id','stock-name','stock-frag','stock-size','stock-qty','stock-cost','stock-pvp','stock-notes','stock-ready-at'].forEach(id => $(id).value = '');
   if ($('stock-pick-rec')) $('stock-pick-rec').value = '';
   refreshAllDropdowns();
   openModal('stock-modal');
@@ -1468,7 +1531,8 @@ $('btn-save-stock').addEventListener('click', () => {
   if (!name) { alert('Nome obrigatório'); return; }
   const items = DB.get('stock'), id = $('stock-id').value;
   const obj = { id: id||DB.id(), name, frag:$('stock-frag').value.trim(), size:$('stock-size').value.trim(),
-    qty:num($('stock-qty').value), cost:num($('stock-cost').value), pvp:num($('stock-pvp').value), notes:$('stock-notes').value.trim() };
+    qty:num($('stock-qty').value), cost:num($('stock-cost').value), pvp:num($('stock-pvp').value),
+    notes:$('stock-notes').value.trim(), readyAt: $('stock-ready-at').value || null };
   if (id) { const idx = items.findIndex(x => x.id===id); items[idx]=obj; } else items.push(obj);
   DB.set('stock', items);
   closeModal('stock-modal');
@@ -1959,27 +2023,53 @@ $('btn-cup-reset').addEventListener('click', () => {
 $('btn-cup-save').addEventListener('click', () => {
   const d = window._cupData; if (!d || d.qty < 1) { alert('Calcula primeiro'); return; }
   const name = $('cup-name').value.trim() || 'Copos — ' + new Date().toLocaleDateString('pt-PT');
+  // Guarda o lote
   DB.set('batches', [...DB.get('batches'), {
     id: DB.id(), name, date: today(),
     qty: d.qty, weight: d.weightPerCup,
     waxKg: 0, fragG: 0,
-    waxCost: d.cimCost,           // cimento
-    fragCost: d.gesCost,          // gesso
-    contCost: d.areCost,          // areia
-    wickCost: d.selCost,          // selante
-    lblCost: d.laborCost,         // mão de obra
+    waxCost: d.cimCost, fragCost: d.gesCost, contCost: d.areCost,
+    wickCost: d.selCost, lblCost: d.laborCost,
     other: d.moldCost + d.other,
     totalCost: d.totalCost, cpc: d.cpc, pvp: d.pvp,
     margin: d.margin, kind: 'copos'
   }]);
+  // Adiciona automaticamente ao inventário em cura (14 dias pré-selar)
+  const readyAt = addDays(14);
+  DB.set('inventory', [...DB.get('inventory'), {
+    id: DB.id(), name: name + ' (lote)',
+    type: 'recipiente', unit: 'un',
+    qty: d.qty, price: d.cpc, min: 0,
+    supplier: 'Fabricado',
+    notes: `Lote do dia ${today()}. Custo total: ${eur(d.totalCost)}. Aguarda 14 dias antes de selar.`,
+    status: 'a_curar',
+    readyAt: readyAt,
+    cureStage: 'pre_seal'
+  }]);
   renderBatches();
-  alert('Lote de copos guardado!');
+  refreshAllDropdowns();
+  alert(`✅ Lote guardado!\n\n📦 ${d.qty} copos adicionados ao Inventário em cura.\n🕐 Pronto a selar: ${fmtDate(readyAt)}`);
 });
 $('btn-calc-save').addEventListener('click', () => {
   const d=window._cd; if(!d){alert('Calcula primeiro');return;}
   const name=$('c-name').value.trim()||'Lote '+new Date().toLocaleDateString('pt-PT');
   DB.set('batches',[...DB.get('batches'),{id:DB.id(),name,date:today(),...d}]);
-  renderBatches(); $('c-name').value=''; alert('Lote guardado!');
+  // Adiciona automaticamente ao stock com 14 dias de cura
+  const readyAt = addDays(14);
+  const fragName = (function(){
+    const pickFrag = $('c-pick-frag')?.value;
+    const i = DB.get('inventory').find(x => x.id === pickFrag);
+    return i ? i.name : '';
+  })();
+  DB.set('stock', [...DB.get('stock'), {
+    id: DB.id(), name,
+    frag: fragName, size: d.weight + 'g',
+    qty: d.qty, cost: d.cpc, pvp: d.pvp,
+    notes: `Lote do dia ${today()}. A curar 14 dias.`,
+    readyAt: readyAt
+  }]);
+  renderBatches(); $('c-name').value='';
+  alert(`✅ Lote guardado!\n\n🕯️ ${d.qty} velas adicionadas ao Stock em cura.\n🕐 Prontas a vender: ${fmtDate(readyAt)}`);
 });
 function renderBatches() {
   const b=DB.get('batches');
@@ -2056,13 +2146,32 @@ function doAction(action, id, key, btn) {
       $('inv-total-price').value = (num(i.qty) > 0 && num(i.price) > 0) ? +(num(i.qty)*num(i.price)).toFixed(2) : '';
       $('inv-min').value=i.min||''; $('inv-supplier').value=i.supplier||''; $('inv-notes').value=i.notes||'';
       $('inv-status').value = i.status || 'em_stock';
+      $('inv-ready-at').value = i.readyAt || ''; $('inv-cure-stage').value = i.cureStage || '';
       $('inv-melt').value = i.meltTemp || ''; $('inv-density').value = i.density || '0.80';
       $('inv-flash').value = i.flashPoint || ''; $('inv-volume').value = i.volume || '';
-      updateInvCondFields();
+      updateInvCondFields(); updateInvCureFields();
       openModal('inv-modal');
     } else if (action === 'inv-arrived') {
       var items = DB.get('inventory'); var idx = items.findIndex(function(x){return x.id===id;});
       if (idx >= 0) { items[idx].status = 'em_stock'; DB.set('inventory', items); renderInventory(); }
+    } else if (action === 'inv-sealed') {
+      var items = DB.get('inventory'); var idx = items.findIndex(function(x){return x.id===id;});
+      if (idx >= 0) {
+        items[idx].cureStage = 'post_seal';
+        items[idx].readyAt = addDays(3);
+        items[idx].notes = (items[idx].notes || '') + ` · Selado ${today()}, pronto ${items[idx].readyAt}`;
+        DB.set('inventory', items); renderInventory();
+      }
+    } else if (action === 'inv-ready') {
+      var items = DB.get('inventory'); var idx = items.findIndex(function(x){return x.id===id;});
+      if (idx >= 0) {
+        items[idx].status = 'em_stock';
+        items[idx].cureStage = null; items[idx].readyAt = null;
+        DB.set('inventory', items); renderInventory();
+      }
+    } else if (action === 'stock-ready') {
+      var items = DB.get('stock'); var idx = items.findIndex(function(x){return x.id===id;});
+      if (idx >= 0) { items[idx].readyAt = null; DB.set('stock', items); renderStock(); renderStockCards(); }
     } else if (action === 'exp-inv-rm') {
       var rowEl = btn.closest('.exp-inv-row');
       if (rowEl) { rowEl.remove(); recomputeExpInvSum(); }
@@ -2071,6 +2180,7 @@ function doAction(action, id, key, btn) {
       $('stock-modal-title').textContent='Editar Vela';
       $('stock-id').value=i.id; $('stock-name').value=i.name; $('stock-frag').value=i.frag||''; $('stock-size').value=i.size||'';
       $('stock-qty').value=i.qty; $('stock-cost').value=i.cost||''; $('stock-pvp').value=i.pvp||''; $('stock-notes').value=i.notes||'';
+      $('stock-ready-at').value = i.readyAt || '';
       openModal('stock-modal');
     } else if (action === 'edit-order') {
       var o = DB.get('orders').find(function(x){return x.id===id;}); if(!o) return;
