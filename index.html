@@ -1250,6 +1250,54 @@ function addDays(n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Conversão entre unidades (kg ⇄ g, L ⇄ ml, e weight ⇄ volume assumindo ~1g/ml)
+function convertAmount(amount, fromUnit, toUnit) {
+  if (fromUnit === toUnit) return amount;
+  if (fromUnit === 'kg' && toUnit === 'g')  return amount * 1000;
+  if (fromUnit === 'g'  && toUnit === 'kg') return amount / 1000;
+  if (fromUnit === 'L'  && toUnit === 'ml') return amount * 1000;
+  if (fromUnit === 'ml' && toUnit === 'L')  return amount / 1000;
+  if (fromUnit === 'g'  && toUnit === 'ml') return amount;
+  if (fromUnit === 'ml' && toUnit === 'g')  return amount;
+  if (fromUnit === 'kg' && toUnit === 'L')  return amount;
+  if (fromUnit === 'L'  && toUnit === 'kg') return amount;
+  if (fromUnit === 'kg' && toUnit === 'ml') return amount * 1000;
+  if (fromUnit === 'ml' && toUnit === 'kg') return amount / 1000;
+  if (fromUnit === 'g'  && toUnit === 'L')  return amount / 1000;
+  if (fromUnit === 'L'  && toUnit === 'g')  return amount * 1000;
+  return amount;
+}
+
+// Subtrai materiais usados ao inventário; devolve resumo para mostrar ao utilizador
+function deductMaterials(deductions) {
+  const items = DB.get('inventory');
+  const summary = [];
+  let modified = false;
+  deductions.forEach(d => {
+    if (!d.itemId || d.amount <= 0) return;
+    const idx = items.findIndex(x => x.id === d.itemId);
+    if (idx < 0) return;
+    const item = items[idx];
+    const used = convertAmount(d.amount, d.fromUnit, item.unit);
+    const newQty = num(item.qty) - used;
+    items[idx] = { ...item, qty: newQty };
+    summary.push({ name: item.name, used, unit: item.unit, remaining: newQty, negative: newQty < 0 });
+    modified = true;
+  });
+  if (modified) DB.set('inventory', items);
+  return summary;
+}
+
+function formatDeductSummary(summary) {
+  if (!summary || !summary.length) return '';
+  let msg = '\n\n📤 Materiais subtraídos do inventário:';
+  summary.forEach(s => {
+    const warn = s.negative ? ' ⚠️ stock negativo!' : '';
+    msg += `\n  • ${s.name}: −${fmt(s.used, 2)} ${s.unit} (resta: ${fmt(s.remaining, 2)})${warn}`;
+  });
+  return msg;
+}
+
 // ── Sincroniza Qty ⇄ Total ⇄ Preço/Unidade ─────────────
 // O utilizador mete normalmente Qty + Total → calcula €/un.
 // Mas se preferir meter €/un. directamente, o Total também actualiza.
@@ -2023,7 +2071,7 @@ $('btn-cup-reset').addEventListener('click', () => {
 $('btn-cup-save').addEventListener('click', () => {
   const d = window._cupData; if (!d || d.qty < 1) { alert('Calcula primeiro'); return; }
   const name = $('cup-name').value.trim() || 'Copos — ' + new Date().toLocaleDateString('pt-PT');
-  // Guarda o lote
+  // 1. Guarda o lote
   DB.set('batches', [...DB.get('batches'), {
     id: DB.id(), name, date: today(),
     qty: d.qty, weight: d.weightPerCup,
@@ -2034,7 +2082,7 @@ $('btn-cup-save').addEventListener('click', () => {
     totalCost: d.totalCost, cpc: d.cpc, pvp: d.pvp,
     margin: d.margin, kind: 'copos'
   }]);
-  // Adiciona automaticamente ao inventário em cura (14 dias pré-selar)
+  // 2. Adiciona ao inventário em cura (14 dias pré-selar)
   const readyAt = addDays(14);
   DB.set('inventory', [...DB.get('inventory'), {
     id: DB.id(), name: name + ' (lote)',
@@ -2042,23 +2090,28 @@ $('btn-cup-save').addEventListener('click', () => {
     qty: d.qty, price: d.cpc, min: 0,
     supplier: 'Fabricado',
     notes: `Lote do dia ${today()}. Custo total: ${eur(d.totalCost)}. Aguarda 14 dias antes de selar.`,
-    status: 'a_curar',
-    readyAt: readyAt,
-    cureStage: 'pre_seal'
+    status: 'a_curar', readyAt: readyAt, cureStage: 'pre_seal'
   }]);
+  // 3. Deduz materiais usados do inventário (apenas os que foram escolhidos no picker)
+  const summary = deductMaterials([
+    { itemId: $('cup-pick-cim')?.value, amount: d.totalCimKg, fromUnit: 'kg' },
+    { itemId: $('cup-pick-ges')?.value, amount: d.totalGesKg, fromUnit: 'kg' },
+    { itemId: $('cup-pick-are')?.value, amount: d.totalAreKg, fromUnit: 'kg' },
+    { itemId: $('cup-pick-sel')?.value, amount: d.totalSelKg, fromUnit: 'kg' }
+  ]);
   renderBatches();
   refreshAllDropdowns();
-  alert(`✅ Lote guardado!\n\n📦 ${d.qty} copos adicionados ao Inventário em cura.\n🕐 Pronto a selar: ${fmtDate(readyAt)}`);
+  alert(`✅ Lote guardado!\n\n📦 ${d.qty} copos adicionados ao Inventário em cura.\n🕐 Pronto a selar: ${fmtDate(readyAt)}${formatDeductSummary(summary)}`);
 });
 $('btn-calc-save').addEventListener('click', () => {
   const d=window._cd; if(!d){alert('Calcula primeiro');return;}
   const name=$('c-name').value.trim()||'Lote '+new Date().toLocaleDateString('pt-PT');
+  // 1. Guarda o lote
   DB.set('batches',[...DB.get('batches'),{id:DB.id(),name,date:today(),...d}]);
-  // Adiciona automaticamente ao stock com 14 dias de cura
+  // 2. Adiciona ao stock com 14 dias de cura
   const readyAt = addDays(14);
   const fragName = (function(){
-    const pickFrag = $('c-pick-frag')?.value;
-    const i = DB.get('inventory').find(x => x.id === pickFrag);
+    const i = DB.get('inventory').find(x => x.id === $('c-pick-frag')?.value);
     return i ? i.name : '';
   })();
   DB.set('stock', [...DB.get('stock'), {
@@ -2068,8 +2121,16 @@ $('btn-calc-save').addEventListener('click', () => {
     notes: `Lote do dia ${today()}. A curar 14 dias.`,
     readyAt: readyAt
   }]);
+  // 3. Deduz materiais usados do inventário
+  const summary = deductMaterials([
+    { itemId: $('c-pick-wax')?.value,  amount: d.waxKg, fromUnit: 'kg' },
+    { itemId: $('c-pick-frag')?.value, amount: d.fragG, fromUnit: 'g' },
+    { itemId: $('c-pick-cont')?.value, amount: d.qty,   fromUnit: 'un' },
+    { itemId: $('c-pick-wick')?.value, amount: d.qty,   fromUnit: 'un' },
+    { itemId: $('c-pick-lbl')?.value,  amount: d.qty,   fromUnit: 'un' }
+  ]);
   renderBatches(); $('c-name').value='';
-  alert(`✅ Lote guardado!\n\n🕯️ ${d.qty} velas adicionadas ao Stock em cura.\n🕐 Prontas a vender: ${fmtDate(readyAt)}`);
+  alert(`✅ Lote guardado!\n\n🕯️ ${d.qty} velas adicionadas ao Stock em cura.\n🕐 Prontas a vender: ${fmtDate(readyAt)}${formatDeductSummary(summary)}`);
 });
 function renderBatches() {
   const b=DB.get('batches');
