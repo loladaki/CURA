@@ -148,6 +148,7 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     <div class="box"><h3>🛒 Últimas encomendas</h3><div id="dash-orders"></div></div>
     <div class="box"><h3>⚠️ Stock baixo / esgotado</h3><div id="dash-lowstock"></div></div>
   </div>
+  <div class="box" style="margin-top:16px"><h3>🕐 Próximos a sair de cura</h3><div id="dash-curing"></div></div>
 </div>
 
 <div class="page" id="pg-inventario">
@@ -588,6 +589,13 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
     <div class="form-grid">
       <div class="fg"><label>Data *</label><input type="date" id="order-date"></div>
       <div class="fg"><label>Cliente *</label><input type="text" id="order-client" placeholder="Nome do cliente"></div>
+    </div>
+    <div class="mat-pick">
+      <h4>🕯️ Produto do Stock (opcional)</h4>
+      <select id="order-pick-stock" style="width:100%"><option value="">— escolher do stock —</option></select>
+      <div style="font-size:.7rem;color:var(--muted);margin-top:4px">Preenche o produto e o preço. Ao marcar como Enviada/Entregue, retira do stock automaticamente.</div>
+    </div>
+    <div class="form-grid">
       <div class="fg" style="grid-column:1/-1"><label>Produto *</label><input type="text" id="order-product" placeholder="ex: Vela Lavanda 200g"></div>
       <div class="fg"><label>Quantidade *</label><input type="number" id="order-qty" placeholder="1" min="1"></div>
       <div class="fg"><label>Preço/Un. (€)</label><input type="number" id="order-price" placeholder="0.00" step="0.01"></div>
@@ -717,6 +725,8 @@ async function sbDeleteAll(tbl) {
 
 function toRow(k, obj) {
   const r = { ...obj }; delete r.created_at;
+  // Campos internos que não vão para o Supabase
+  delete r._stockDeducted;
   if (k === 'expenses') { r.descricao = r.desc; delete r.desc; }
   if (k === 'inventory') {
     const m = { meltTemp:'melt_temp', flashPoint:'flash_point' };
@@ -729,6 +739,9 @@ function toRow(k, obj) {
   if (k === 'receitas') {
     const m = { ceraId:'cera_id', essenciaId:'essencia_id', recipienteId:'recipiente_id', pavioId:'pavio_id' };
     Object.entries(m).forEach(([js, sql]) => { if (r[js] !== undefined) { r[sql] = r[js]; delete r[js]; } });
+  }
+  if (k === 'orders') {
+    if (r.stockId !== undefined) { r.stock_id = r.stockId; delete r.stockId; }
   }
   return r;
 }
@@ -746,6 +759,9 @@ function fromRow(k, r) {
   if (k === 'receitas') {
     const m = { cera_id:'ceraId', essencia_id:'essenciaId', recipiente_id:'recipienteId', pavio_id:'pavioId' };
     Object.entries(m).forEach(([sql, js]) => { if (obj[sql] !== undefined) { obj[js] = obj[sql]; delete obj[sql]; } });
+  }
+  if (k === 'orders') {
+    if (obj.stock_id !== undefined) { obj.stockId = obj.stock_id; delete obj.stock_id; }
   }
   return obj;
 }
@@ -1155,6 +1171,46 @@ function renderDashboard() {
     ...low.map(i => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:.83rem">${TYPES[i.type]||i.type} — ${i.name}</span><span class="badge b-red">Baixo: ${fmt(i.qty,2)} ${i.unit}</span></div>`),
     ...outOfStock.map(s => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:.83rem">🕯️ ${s.name}</span><span class="badge b-red">Esgotado</span></div>`)
   ].join('') : '<div class="empty"><div class="empty-ico">✅</div><p>Stock OK</p></div>';
+
+  // ── WIDGET DE CURA ──────────────────────────────────────
+  const curingInv = inv.filter(i => i.status === 'a_curar' && i.readyAt)
+    .map(i => ({ ...i, _src: 'inv', _dias: daysUntil(i.readyAt) }));
+  const curingStk = stock.filter(s => s.readyAt && daysUntil(s.readyAt) !== null && daysUntil(s.readyAt) >= -7)
+    .map(s => ({ ...s, _src: 'stock', _dias: daysUntil(s.readyAt) }));
+  const allCuring = [...curingInv, ...curingStk].sort((a, b) => (a._dias || 0) - (b._dias || 0));
+  $('dash-curing').innerHTML = allCuring.length ? allCuring.map(item => {
+    const dias = item._dias;
+    let badge, action = '';
+    if (dias <= 0) {
+      badge = '<span class="badge b-green">⚡ Pronto!</span>';
+    } else if (dias <= 3) {
+      badge = `<span class="badge b-yellow">🕐 ${dias} dia${dias!==1?'s':''}</span>`;
+    } else {
+      badge = `<span class="badge b-blue">🕐 ${dias} dias</span>`;
+    }
+    if (item._src === 'inv') {
+      const stage = item.cureStage === 'pre_seal' ? 'Pré-selar' : item.cureStage === 'post_seal' ? 'Pós-selar' : '';
+      const icon = item.type === 'recipiente' ? '🫙' : '📦';
+      const btn = dias <= 0
+        ? (item.cureStage === 'pre_seal'
+          ? `<button class="btn btn-sm" style="background:#fef3c7;color:#92400e;margin-left:6px" data-action="inv-sealed" data-id="${item.id}">🛡️ Selei</button><button class="btn btn-sm" style="background:#d1fae5;color:#065f46;margin-left:4px" data-action="inv-ready" data-id="${item.id}">✅</button>`
+          : `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;margin-left:6px" data-action="inv-ready" data-id="${item.id}">✅ Pronto</button>`)
+        : '';
+      action = btn;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:.83rem">${icon} ${item.name} <span class="muted" style="font-size:.7rem">· ${stage} · ${item.qty} ${item.unit}</span></span>
+        <span>${badge}${action}</span>
+      </div>`;
+    } else {
+      const btn = dias <= 0
+        ? `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;margin-left:6px" data-action="stock-ready" data-id="${item.id}">✅ Pronto</button>`
+        : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:.83rem">🕯️ ${item.name} <span class="muted" style="font-size:.7rem">· ${item.qty} velas</span></span>
+        <span>${badge}${btn}</span>
+      </div>`;
+    }
+  }).join('') : '<div class="empty"><div class="empty-ico">🌱</div><p>Nada em cura</p></div>';
 }
 
 // ── INVENTORY ─────────────────────────────────────────────
@@ -1641,16 +1697,73 @@ $('btn-add-order').addEventListener('click', () => {
   $('order-id').value=''; $('order-date').value=today(); $('order-client').value='';
   $('order-product').value=''; $('order-qty').value=1; $('order-price').value='';
   $('order-status').value='pendente'; $('order-pay').value=''; $('order-notes').value='';
+  if ($('order-pick-stock')) $('order-pick-stock').value = '';
+  refreshAllDropdowns();
   openModal('order-modal');
 });
+
+// Picker do stock auto-preenche produto e preço
+const orderPickStock = $('order-pick-stock');
+if (orderPickStock) orderPickStock.addEventListener('change', () => {
+  const s = DB.get('stock').find(x => x.id === orderPickStock.value);
+  if (!s) return;
+  $('order-product').value = s.name;
+  if (s.pvp) $('order-price').value = num(s.pvp).toFixed(2);
+});
+
+// Estados em que o stock deve estar deduzido (a venda é "real")
+const DEDUCTING_STATUSES = ['enviada', 'entregue', 'processando'];
+
 $('btn-save-order').addEventListener('click', () => {
   const client=$('order-client').value.trim(), product=$('order-product').value.trim();
   if (!client||!product) { alert('Cliente e Produto obrigatórios'); return; }
   const orders=DB.get('orders'), id=$('order-id').value;
-  const obj={id:id||DB.id(),date:$('order-date').value,client,product,qty:num($('order-qty').value),
-    price:num($('order-price').value),status:$('order-status').value,pay:$('order-pay').value,notes:$('order-notes').value.trim()};
+  const oldOrder = id ? orders.find(x => x.id === id) : null;
+  const stockId = $('order-pick-stock')?.value || (oldOrder?.stockId || null);
+  const obj = { id: id||DB.id(), date:$('order-date').value, client, product,
+    qty:num($('order-qty').value), price:num($('order-price').value),
+    status:$('order-status').value, pay:$('order-pay').value,
+    notes:$('order-notes').value.trim(),
+    stockId: stockId,
+    _stockDeducted: oldOrder?._stockDeducted || false };
+
+  // ── Dedução / restauração de stock ─────────────────────
+  const wasDeducted = !!obj._stockDeducted;
+  const shouldDeduct = DEDUCTING_STATUSES.includes(obj.status) && stockId;
+  let stockMsg = '';
+
+  if (shouldDeduct && !wasDeducted) {
+    // Deduz do stock agora
+    const stockItems = DB.get('stock');
+    const idx = stockItems.findIndex(s => s.id === stockId);
+    if (idx >= 0) {
+      const newQty = num(stockItems[idx].qty) - num(obj.qty);
+      stockItems[idx] = { ...stockItems[idx], qty: newQty };
+      DB.set('stock', stockItems);
+      obj._stockDeducted = true;
+      stockMsg = `\n\n📤 Deduzido do stock: ${obj.qty} × ${stockItems[idx].name} (resta: ${newQty})${newQty < 0 ? ' ⚠️ stock negativo!' : ''}`;
+    }
+  } else if (!shouldDeduct && wasDeducted) {
+    // Restaura ao stock (mudou de estado para pendente/cancelada)
+    const restoreStockId = oldOrder?.stockId || stockId;
+    if (restoreStockId) {
+      const stockItems = DB.get('stock');
+      const idx = stockItems.findIndex(s => s.id === restoreStockId);
+      if (idx >= 0) {
+        const newQty = num(stockItems[idx].qty) + num(oldOrder?.qty || 0);
+        stockItems[idx] = { ...stockItems[idx], qty: newQty };
+        DB.set('stock', stockItems);
+        obj._stockDeducted = false;
+        stockMsg = `\n\n📥 Restaurado ao stock: ${oldOrder?.qty} × ${stockItems[idx].name} (total: ${newQty})`;
+      }
+    }
+  }
+
   if(id){const idx=orders.findIndex(x=>x.id===id);orders[idx]=obj;}else orders.push(obj);
-  DB.set('orders',orders); closeModal('order-modal'); renderSalesCards(); renderOrders();
+  DB.set('orders',orders);
+  closeModal('order-modal'); renderSalesCards(); renderOrders();
+  refreshAllDropdowns();
+  if (stockMsg) alert(`✅ Encomenda guardada!${stockMsg}`);
 });
 
 // ── EXPENSES ──────────────────────────────────────────────
@@ -1883,6 +1996,15 @@ function refreshAllDropdowns() {
     rs.innerHTML = '<option value="">— escolher receita —</option>' +
       recs.map(r => `<option value="${r.id}">${r.name}${r.pvp?` (€${r.pvp})`:''}</option>`).join('');
     if (cur && recs.find(r => r.id === cur)) rs.value = cur;
+  }
+  // Encomenda: dropdown do stock disponível
+  const os = $('order-pick-stock');
+  if (os) {
+    const stock = DB.get('stock').filter(s => num(s.qty) > 0);
+    const cur = os.value;
+    os.innerHTML = '<option value="">— escolher do stock —</option>' +
+      stock.map(s => `<option value="${s.id}">${s.name} (${num(s.qty)} em stock${s.pvp?`, ${eur(s.pvp)}`:''})</option>`).join('');
+    if (cur && stock.find(s => s.id === cur)) os.value = cur;
   }
 }
 
@@ -2249,6 +2371,8 @@ function doAction(action, id, key, btn) {
       $('order-id').value=o.id; $('order-date').value=o.date; $('order-client').value=o.client;
       $('order-product').value=o.product; $('order-qty').value=o.qty; $('order-price').value=o.price;
       $('order-status').value=o.status; $('order-pay').value=o.pay||''; $('order-notes').value=o.notes||'';
+      refreshAllDropdowns();
+      if ($('order-pick-stock')) $('order-pick-stock').value = o.stockId || '';
       openModal('order-modal');
     } else if (action === 'edit-exp') {
       var ex = DB.get('expenses').find(function(x){return x.id===id;}); if(!ex) return;
